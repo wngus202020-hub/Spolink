@@ -1,0 +1,190 @@
+select ok(
+  public.issue_password_recovery_grant(repeat('a', 64), statement_timestamp() + interval '5 minutes') = false,
+  'issue rejects null auth context'
+);
+select ok(
+  public.consume_password_recovery_grant(repeat('a', 64)) = false,
+  'consume rejects null auth context'
+);
+
+select pg_temp.set_todo3_recovery_auth(
+  pg_temp.todo3_primary_actor(),
+  pg_temp.todo3_primary_session()
+);
+set local role authenticated;
+select is(
+  public.issue_password_recovery_grant(repeat('1', 64), statement_timestamp() + interval '5 minutes'),
+  true,
+  'authenticated JWT context can issue a real grant'
+);
+reset role;
+select is(
+  (
+    select count(*)::integer
+    from private.password_recovery_grants
+    where token_hash = repeat('1', 64)
+      and user_id = pg_temp.todo3_primary_actor()
+      and session_id = pg_temp.todo3_primary_session()
+      and consumed_at is null
+  ),
+  1,
+  'issued grant stores hash, user, session, and unconsumed state'
+);
+
+select pg_temp.set_todo3_recovery_auth(
+  pg_temp.todo3_primary_actor(),
+  pg_temp.todo3_primary_session()
+);
+set local role authenticated;
+select is(
+  public.issue_password_recovery_grant(repeat('1', 64), statement_timestamp() + interval '5 minutes'),
+  false,
+  'duplicate issue returns false for an existing token hash'
+);
+select is(
+  public.consume_password_recovery_grant(repeat('1', 64)),
+  true,
+  'matching authenticated JWT context consumes a real grant'
+);
+select is(
+  public.consume_password_recovery_grant(repeat('1', 64)),
+  false,
+  'replay consume returns false after consumed_at is set'
+);
+reset role;
+select isnt(
+  (select consumed_at from private.password_recovery_grants where token_hash = repeat('1', 64)),
+  null::timestamptz,
+  'consumed grant records consumed_at'
+);
+
+select pg_temp.set_todo3_recovery_auth(
+  pg_temp.todo3_primary_actor(),
+  pg_temp.todo3_primary_session()
+);
+set local role authenticated;
+select is(
+  public.issue_password_recovery_grant(repeat('2', 64), statement_timestamp() + interval '5 minutes'),
+  true,
+  'second real grant can be issued for wrong-context probes'
+);
+reset role;
+
+select pg_temp.set_todo3_recovery_auth(
+  (select id from todo3_recovery_actor where actor_key = 'other_user'),
+  pg_temp.todo3_primary_session()
+);
+set local role authenticated;
+select is(
+  public.consume_password_recovery_grant(repeat('2', 64)),
+  false,
+  'wrong user cannot consume another user grant'
+);
+reset role;
+
+select pg_temp.set_todo3_recovery_auth(
+  pg_temp.todo3_primary_actor(),
+  (select session_id from todo3_recovery_actor where actor_key = 'other_session')
+);
+set local role authenticated;
+select is(
+  public.consume_password_recovery_grant(repeat('2', 64)),
+  false,
+  'wrong session cannot consume another session grant'
+);
+reset role;
+
+select pg_temp.set_todo3_recovery_auth(
+  pg_temp.todo3_primary_actor(),
+  pg_temp.todo3_primary_session()
+);
+set local role authenticated;
+select is(
+  public.consume_password_recovery_grant(repeat('2', 64)),
+  true,
+  'original user and session can still consume after wrong-context attempts'
+);
+select is(
+  public.issue_password_recovery_grant('not-hex', statement_timestamp() + interval '5 minutes'),
+  false,
+  'issue rejects non-hex token hash before insert'
+);
+select is(
+  public.issue_password_recovery_grant(repeat('3', 64), statement_timestamp() + interval '601 seconds'),
+  false,
+  'issue rejects expiry beyond 600 seconds'
+);
+reset role;
+
+insert into private.password_recovery_grants (
+  token_hash,
+  user_id,
+  session_id,
+  created_at,
+  expires_at
+)
+values (
+  repeat('4',64),
+  pg_temp.todo3_primary_actor(),
+  pg_temp.todo3_primary_session(),
+  statement_timestamp() - interval '10 minutes',
+  statement_timestamp() - interval '1 minute'
+);
+select pg_temp.set_todo3_recovery_auth(
+  pg_temp.todo3_primary_actor(),
+  pg_temp.todo3_primary_session()
+);
+set local role authenticated;
+select is(
+  public.consume_password_recovery_grant(repeat('4', 64)),
+  false,
+  'expired grant cannot be consumed'
+);
+select throws_ok(
+  $$select count(*) from private.password_recovery_grants$$,
+  '42501',
+  'permission denied for schema private',
+  'authenticated role cannot read private grant table directly'
+);
+reset role;
+
+set local role anon;
+select throws_ok(
+  $$select public.issue_password_recovery_grant(repeat('5', 64), statement_timestamp() + interval '5 minutes')$$,
+  '42501',
+  'permission denied for function issue_password_recovery_grant',
+  'anon role is denied issue RPC execution'
+);
+reset role;
+
+select throws_ok(
+  $$insert into private.password_recovery_grants (token_hash,user_id,session_id,expires_at)
+    values ('not-hex', gen_random_uuid(), 's', statement_timestamp() + interval '1 minute')$$,
+  '23514',
+  'new row for relation "password_recovery_grants" violates check constraint "password_recovery_grants_token_hash_check"',
+  'token hash check rejects non-hex'
+);
+select throws_ok(
+  $$insert into private.password_recovery_grants (token_hash,user_id,session_id,expires_at)
+    values (repeat('a',64), gen_random_uuid(), '', statement_timestamp() + interval '1 minute')$$,
+  '23514',
+  'new row for relation "password_recovery_grants" violates check constraint "password_recovery_grants_session_id_check"',
+  'session id check rejects empty string'
+);
+select throws_ok(
+  $$insert into private.password_recovery_grants (token_hash,user_id,session_id,expires_at)
+    values (repeat('b',64), gen_random_uuid(), 's', statement_timestamp() + interval '601 seconds')$$,
+  '23514',
+  'new row for relation "password_recovery_grants" violates check constraint "password_recovery_grants_check"',
+  'expiry check rejects lifetime above 600 seconds'
+);
+select ok(
+  lower(pg_get_functiondef('public.consume_password_recovery_grant(text)'::regprocedure))
+    like '%and consumed_at is null%',
+  'consume atomically filters unconsumed grants'
+);
+select ok(
+  lower(pg_get_functiondef('public.consume_password_recovery_grant(text)'::regprocedure))
+    like '%return updated_count = 1%',
+  'consume returns only one successful update'
+);

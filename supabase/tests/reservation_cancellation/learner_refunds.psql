@@ -1,0 +1,156 @@
+select pg_temp.restore_todo3_cancellation(interval '24 hours');
+set local role anon;
+select pg_temp.set_todo3_auth(null, 'anon');
+select is(
+  pg_temp.todo3_sqlstate($$
+    select *
+    from public.cancel_reservation(
+      '00000000-0000-4000-8000-000000000402',
+      'Todo3 anon denied'
+    )
+  $$),
+  '42501',
+  'anon execute is denied before cancellation side effects'
+);
+reset role;
+
+select pg_temp.restore_todo3_cancellation(interval '24 hours');
+set local role authenticated;
+select pg_temp.set_todo3_auth((select id from todo3_actor where actor_key = 'learner'));
+insert into todo3_rpc_result
+select *
+from public.cancel_reservation(
+  '00000000-0000-4000-8000-000000000402',
+  'Todo3 learner exactly 24h'
+);
+reset role;
+
+select is(
+  (select reservation_status::text from todo3_rpc_result),
+  'cancelled_by_user',
+  'learner cancellation at exactly 24h returns cancelled_by_user'
+);
+select is(
+  (select refund_amount from todo3_rpc_result),
+  7000,
+  'learner cancellation at exactly 24h floors 70 percent refund to 7000'
+);
+select is(
+  (select status::text from public.reservations where id = '00000000-0000-4000-8000-000000000402'),
+  'cancelled_by_user',
+  'learner cancellation atomically updates reservation status'
+);
+select is(
+  (select reserved_count from public.lesson_schedules where id = '00000000-0000-4000-8000-000000000301'),
+  0,
+  'learner cancellation atomically releases one reserved capacity'
+);
+select is(
+  (
+    select status::text
+    from public.payments
+    where id = '00000000-0000-4000-8000-000000000502'
+  ),
+  'paid',
+  'learner cancellation leaves approved payment paid'
+);
+select is(
+  (
+    select jsonb_build_object(
+      'amount', amount,
+      'source', source,
+      'status', status,
+      'requestedBy', requested_by
+    )
+    from public.refunds
+    where reservation_id = '00000000-0000-4000-8000-000000000402'
+      and source = 'reservation_cancellation'
+  ),
+  jsonb_build_object(
+    'amount', 7000,
+    'source', 'reservation_cancellation',
+    'status', 'requested',
+    'requestedBy', (select id from todo3_actor where actor_key = 'learner')
+  ),
+  'learner cancellation creates one requested reservation_cancellation refund'
+);
+select is(
+  (
+    select count(*)::integer
+    from public.notifications
+    where data ->> 'reservationId' = '00000000-0000-4000-8000-000000000402'
+      and user_id = (select id from todo3_actor where actor_key = 'coach')
+      and type = 'reservation_cancelled'
+  ),
+  1,
+  'learner cancellation creates exactly one coach cancellation notification'
+);
+select is(
+  (
+    select count(*)::integer
+    from public.audit_logs
+    where target_id = '00000000-0000-4000-8000-000000000402'
+      and action = 'reservation.cancelled'
+      and actor_id = (select id from todo3_actor where actor_key = 'learner')
+  ),
+  1,
+  'learner cancellation creates exactly one learner cancellation audit log'
+);
+
+select pg_temp.restore_todo3_cancellation(interval '23 hours 59 minutes 59 seconds');
+set local role authenticated;
+select pg_temp.set_todo3_auth((select id from todo3_actor where actor_key = 'learner'));
+insert into todo3_rpc_result
+select *
+from public.cancel_reservation(
+  '00000000-0000-4000-8000-000000000402',
+  'Todo3 learner below 24h'
+);
+reset role;
+select is(
+  (select refund_amount from todo3_rpc_result),
+  5000,
+  'learner cancellation below 24h floors 50 percent refund to 5000'
+);
+
+select pg_temp.restore_todo3_cancellation(interval '3 hours');
+set local role authenticated;
+select pg_temp.set_todo3_auth((select id from todo3_actor where actor_key = 'learner'));
+insert into todo3_rpc_result
+select *
+from public.cancel_reservation(
+  '00000000-0000-4000-8000-000000000402',
+  'Todo3 learner exactly 3h'
+);
+reset role;
+select is(
+  (select refund_amount from todo3_rpc_result),
+  5000,
+  'learner cancellation at exactly 3h floors 50 percent refund to 5000'
+);
+
+select pg_temp.restore_todo3_cancellation(interval '2 hours 59 minutes 59 seconds');
+set local role authenticated;
+select pg_temp.set_todo3_auth((select id from todo3_actor where actor_key = 'learner'));
+insert into todo3_rpc_result
+select *
+from public.cancel_reservation(
+  '00000000-0000-4000-8000-000000000402',
+  'Todo3 learner below 3h'
+);
+reset role;
+select is(
+  (select refund_amount from todo3_rpc_result),
+  null::integer,
+  'learner cancellation below 3h returns no refund amount'
+);
+select is(
+  (
+    select count(*)::integer
+    from public.refunds
+    where reservation_id = '00000000-0000-4000-8000-000000000402'
+      and source = 'reservation_cancellation'
+  ),
+  0,
+  'learner cancellation below 3h creates no refund request'
+);

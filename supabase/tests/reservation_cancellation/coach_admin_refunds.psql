@@ -1,0 +1,80 @@
+select pg_temp.restore_todo3_cancellation(interval '24 hours');
+set local role authenticated;
+select pg_temp.set_todo3_auth((select id from todo3_actor where actor_key = 'coach'));
+insert into todo3_rpc_result
+select *
+from public.cancel_reservation(
+  '00000000-0000-4000-8000-000000000402',
+  'Todo3 coach cancellation'
+);
+reset role;
+select is(
+  (select reservation_status::text from todo3_rpc_result),
+  'cancelled_by_coach',
+  'approved coach cancellation returns cancelled_by_coach'
+);
+select is(
+  (select refund_amount from todo3_rpc_result),
+  10001,
+  'approved coach cancellation returns full refund'
+);
+select is(
+  (
+    select requested_by
+    from public.refunds
+    where reservation_id = '00000000-0000-4000-8000-000000000402'
+      and source = 'reservation_cancellation'
+  ),
+  (select id from todo3_actor where actor_key = 'coach'),
+  'approved coach cancellation records the coach as refund requester'
+);
+select is(
+  (
+    select count(*)::integer
+    from public.notifications
+    where data ->> 'reservationId' = '00000000-0000-4000-8000-000000000402'
+      and user_id = (select id from todo3_actor where actor_key = 'learner')
+  ),
+  1,
+  'approved coach cancellation notifies exactly the learner'
+);
+
+select pg_temp.restore_todo3_cancellation(interval '24 hours');
+set local role authenticated;
+select pg_temp.set_todo3_auth((select id from todo3_actor where actor_key = 'admin'));
+insert into todo3_rpc_result
+select *
+from public.cancel_reservation(
+  '00000000-0000-4000-8000-000000000402',
+  'Todo3 admin cancellation'
+);
+reset role;
+select is(
+  (select reservation_status::text from todo3_rpc_result),
+  'cancelled_by_admin',
+  'admin cancellation returns cancelled_by_admin'
+);
+select is(
+  (select refund_amount from todo3_rpc_result),
+  10001,
+  'admin cancellation returns full refund'
+);
+select is(
+  (
+    select requested_by
+    from public.refunds
+    where reservation_id = '00000000-0000-4000-8000-000000000402'
+      and source = 'reservation_cancellation'
+  ),
+  (select id from todo3_actor where actor_key = 'admin'),
+  'admin cancellation records the admin as refund requester'
+);
+select is(
+  (
+    select count(*)::integer
+    from public.notifications
+    where data ->> 'reservationId' = '00000000-0000-4000-8000-000000000402'
+  ),
+  2,
+  'admin cancellation notifies learner and coach exactly once'
+);

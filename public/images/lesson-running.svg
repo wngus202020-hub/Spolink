@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 675" role="img" aria-labelledby="title desc">
+  <title id="title">한강 러닝 자세 교정</title>
+  <desc id="desc">강변 러닝 트랙과 러닝화를 표현한 자세 교정 레슨 이미지</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#e8f7ff"/>
+      <stop offset="1" stop-color="#f7f7f5"/>
+    </linearGradient>
+    <linearGradient id="track" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#f2555a"/>
+      <stop offset="1" stop-color="#c92f38"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="675" fill="url(#bg)"/>
+  <path d="M0 410c150-60 300-58 450 4s300 70 450 8v253H0z" fill="#3468c9" opacity=".24"/>
+  <path d="M70 500c185-86 382-88 590-8 78 30 132 42 170 44" stroke="url(#track)" stroke-width="92" stroke-linecap="round" fill="none"/>
+  <path d="M92 498c177-70 359-69 548 4 72 28 124 40 166 43" stroke="#f7f7f2" stroke-width="8" stroke-dasharray="34 34" fill="none" opacity=".85"/>
+  <g transform="translate(265 180) rotate(-9)">
+    <path d="M30 204c50-64 110-80 190-48l117 46c50 20 96 22 136 7 15-6 31 5 32 21 2 24-14 47-38 54-120 36-240 24-360-36l-70-35c-12-6-15-21-7-32z" fill="#222"/>
+    <path d="M72 166c50-47 112-57 186-30l74 27" stroke="#f7f7f2" stroke-width="18" stroke-linecap="round" fill="none"/>
+    <path d="M102 221h365" stroke="#f2555a" stroke-width="16" stroke-linecap="round"/>
+    <circle cx="420" cy="222" r="30" fill="#d7fb57"/>
+  </g>
+  <path d="M100 188h170M100 224h120M650 176h150M650 212h92" stroke="#ddddda" stroke-width="12" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,65 @@
+{
+  "name": "spolink",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.25.0",
+  "scripts": {
+    "dev": "next dev --webpack --hostname 127.0.0.1",
+    "dev:local": "node scripts/dev-local.mjs",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1",
+    "test:api": "node tests/auth-ui-e2e/run-api-tests.mjs",
+    "test:api:contracts": "node --test tests/*.test.mjs tests/profile-api/*.test.mjs tests/coach-certification/*.test.mjs tests/auth-ui-e2e/coach-applicant-runner.test.mjs",
+    "test:coach-certification": "node --test tests/coach-certification/*.test.mjs tests/coach-apply-phase1-contract.test.mjs tests/auth-ui-e2e/coach-applicant-runner.test.mjs",
+    "supabase:start": "node scripts/supabase-local.mjs start",
+    "supabase:status": "node scripts/supabase-local.mjs status",
+    "supabase:reset": "node scripts/supabase-local.mjs reset",
+    "supabase:test:db": "node scripts/supabase-local.mjs test-db",
+    "supabase:stop": "node scripts/supabase-local.mjs stop",
+    "supabase:assert-stopped": "node scripts/supabase-local.mjs assert-stopped",
+    "supabase:doctor": "node scripts/supabase-local.mjs doctor",
+    "test:e2e:supabase": "node tests/supabase-e2e/run.mjs",
+    "test:e2e:auth": "node tests/auth-ui-e2e/run.mjs && node tests/auth-ui-e2e/run-booking-confirmation.mjs && node tests/auth-ui-e2e/run-coach-certification.mjs",
+    "test:e2e:payment": "node tests/auth-ui-e2e/run-payment-preparation.mjs",
+    "test:e2e:reservations": "node tests/auth-ui-e2e/run-learner-reservations.mjs",
+    "test:e2e:direction-alignment": "node tests/auth-ui-e2e/run-direction-alignment.mjs .omo/evidence/opencode-direction-alignment/task-14-visual-qa.json",
+    "test:e2e:supabase:deps": "node tests/supabase-e2e/verify-dependencies.mjs",
+    "test:e2e:supabase:evidence": "node tests/supabase-e2e/verify-evidence.mjs",
+    "staging:contract": "node --test tests/staging-contract/*.test.mjs && node tests/staging-contract/write-gate0-checklist.mjs --output .omo/evidence/staging/gate-0-provider-checklist.json && node tests/staging-contract/run-fake-command-tests.mjs --case forbidden-commands --expect reject && node tests/staging-contract/run-fake-command-tests.mjs --case invalid-contract --expect reject && node tests/staging-contract/run-fake-command-tests.mjs --case valid-contract --expect approve && node tests/staging-contract/run-redaction-tests.mjs --fixtures jwt,cookie,key,email,uuid,project-ref,url",
+    "staging:contract:test": "node --test tests/staging-contract/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome check --write ."
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.12.0",
+    "@supabase/supabase-js": "^2.110.2",
+    "ky": "^2.0.2",
+    "lucide-react": "1.23.0",
+    "next": "16.2.11",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "zod": "^4.4.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "sharp": "0.35.0",
+      "postcss": "8.5.18"
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.2",
+    "@electric-sql/pglite": "^0.5.4",
+    "@iarna/toml": "2.2.5",
+    "@playwright/test": "1.61.1",
+    "@tailwindcss/postcss": "4.3.2",
+    "@types/node": "26.1.1",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "postgres": "3.4.9",
+    "supabase": "2.109.1",
+    "tailwindcss": "4.3.2",
+    "typescript": "5.9.3"
+  }
+}

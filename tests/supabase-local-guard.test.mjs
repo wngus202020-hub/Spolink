@@ -1,0 +1,7 @@
+import "./supabase-local-guard/config-and-status.test.mjs"
+import "./supabase-local-guard/cleanup.test.mjs"
+import "./supabase-local-guard/docker-and-spawn.test.mjs"
+import "./supabase-local-guard/docker-quit-identity.test.mjs"
+import "./supabase-local-guard/local-dev-lifecycle.test.mjs"
+import "./supabase-local-guard/ownership.test.mjs"
+import "./supabase-local-guard/receipt.test.mjs"

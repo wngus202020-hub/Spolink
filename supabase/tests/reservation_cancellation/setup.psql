@@ -1,0 +1,508 @@
+create extension if not exists pgtap;
+
+do $$
+declare
+  todo3_learner uuid := '00000000-0000-4000-8000-000000000901';
+  todo3_other_learner uuid := '00000000-0000-4000-8000-000000000902';
+  todo3_coach uuid := '00000000-0000-4000-8000-000000000903';
+  todo3_pending_coach uuid := '00000000-0000-4000-8000-000000000904';
+  todo3_admin uuid := '00000000-0000-4000-8000-000000000905';
+  todo3_tennis_sport_id uuid;
+begin
+  select id into todo3_tennis_sport_id
+  from public.sports
+  where slug = 'tennis';
+
+  if todo3_tennis_sport_id is null then
+    raise exception 'Todo3 reservation cancellation pgTAP requires seeded tennis sport.';
+  end if;
+
+  insert into auth.users (
+    instance_id,
+    id,
+    aud,
+    role,
+    email,
+    encrypted_password,
+    email_confirmed_at,
+    raw_app_meta_data,
+    raw_user_meta_data,
+    created_at,
+    updated_at
+  )
+  values
+    (
+      '00000000-0000-0000-0000-000000000000',
+      todo3_learner,
+      'authenticated',
+      'authenticated',
+      'todo3-reservation-learner@spolink.test',
+      '',
+      statement_timestamp(),
+      '{"provider":"email","providers":["email"]}'::jsonb,
+      '{}'::jsonb,
+      statement_timestamp(),
+      statement_timestamp()
+    ),
+    (
+      '00000000-0000-0000-0000-000000000000',
+      todo3_other_learner,
+      'authenticated',
+      'authenticated',
+      'todo3-reservation-other-learner@spolink.test',
+      '',
+      statement_timestamp(),
+      '{"provider":"email","providers":["email"]}'::jsonb,
+      '{}'::jsonb,
+      statement_timestamp(),
+      statement_timestamp()
+    ),
+    (
+      '00000000-0000-0000-0000-000000000000',
+      todo3_coach,
+      'authenticated',
+      'authenticated',
+      'todo3-reservation-coach@spolink.test',
+      '',
+      statement_timestamp(),
+      '{"provider":"email","providers":["email"]}'::jsonb,
+      '{}'::jsonb,
+      statement_timestamp(),
+      statement_timestamp()
+    ),
+    (
+      '00000000-0000-0000-0000-000000000000',
+      todo3_pending_coach,
+      'authenticated',
+      'authenticated',
+      'todo3-reservation-pending-coach@spolink.test',
+      '',
+      statement_timestamp(),
+      '{"provider":"email","providers":["email"]}'::jsonb,
+      '{}'::jsonb,
+      statement_timestamp(),
+      statement_timestamp()
+    ),
+    (
+      '00000000-0000-0000-0000-000000000000',
+      todo3_admin,
+      'authenticated',
+      'authenticated',
+      'todo3-reservation-admin@spolink.test',
+      '',
+      statement_timestamp(),
+      '{"provider":"email","providers":["email"]}'::jsonb,
+      '{}'::jsonb,
+      statement_timestamp(),
+      statement_timestamp()
+    )
+  on conflict (id) do update
+  set
+    aud = excluded.aud,
+    role = excluded.role,
+    email = excluded.email,
+    updated_at = statement_timestamp();
+
+  insert into public.profiles (id, role, status, display_name, deleted_at)
+  values
+    (todo3_learner, 'learner', 'active', 'E2E Learner', null),
+    (todo3_other_learner, 'learner', 'active', 'E2E Other Learner', null),
+    (todo3_coach, 'coach', 'coach_approved', 'E2E Coach', null),
+    (todo3_pending_coach, 'coach', 'pending_coach', 'E2E Pending Coach', null),
+    (todo3_admin, 'admin', 'active', 'E2E Admin', null)
+  on conflict (id) do update
+  set
+    role = excluded.role,
+    status = excluded.status,
+    display_name = excluded.display_name,
+    deleted_at = excluded.deleted_at,
+    updated_at = statement_timestamp();
+
+  insert into public.coach_profiles (
+    id,
+    user_id,
+    status,
+    primary_sport_id,
+    service_region
+  )
+  values
+    (
+      '00000000-0000-4000-8000-000000000201',
+      todo3_coach,
+      'approved',
+      todo3_tennis_sport_id,
+      '서울 성동구'
+    ),
+    (
+      '00000000-0000-4000-8000-000000000202',
+      todo3_pending_coach,
+      'submitted',
+      todo3_tennis_sport_id,
+      '서울 성동구'
+    )
+  on conflict (id) do update
+  set
+    user_id = excluded.user_id,
+    status = excluded.status,
+    primary_sport_id = excluded.primary_sport_id,
+    service_region = excluded.service_region,
+    updated_at = statement_timestamp();
+
+  insert into public.lessons (
+    id,
+    coach_profile_id,
+    sport_id,
+    status,
+    title,
+    description,
+    region,
+    duration_minutes,
+    price_amount,
+    capacity
+  )
+  values (
+    '00000000-0000-4000-8000-000000000101',
+    '00000000-0000-4000-8000-000000000201',
+    todo3_tennis_sport_id,
+    'active',
+    'E2E Tennis Lesson',
+    'Local Supabase cancellation fixture',
+    '서울 성동구',
+    60,
+    10001,
+    2
+  )
+  on conflict (id) do update
+  set
+    coach_profile_id = excluded.coach_profile_id,
+    sport_id = excluded.sport_id,
+    status = excluded.status,
+    title = excluded.title,
+    description = excluded.description,
+    region = excluded.region,
+    duration_minutes = excluded.duration_minutes,
+    price_amount = excluded.price_amount,
+    capacity = excluded.capacity,
+    updated_at = statement_timestamp();
+
+  insert into public.lesson_schedules (
+    id,
+    lesson_id,
+    starts_at,
+    ends_at,
+    capacity,
+    reserved_count,
+    is_open
+  )
+  values
+    (
+      '00000000-0000-4000-8000-000000000301',
+      '00000000-0000-4000-8000-000000000101',
+      transaction_timestamp() + interval '25 hours',
+      transaction_timestamp() + interval '26 hours',
+      2,
+      1,
+      true
+    ),
+    (
+      '00000000-0000-4000-8000-000000000302',
+      '00000000-0000-4000-8000-000000000101',
+      transaction_timestamp() + interval '48 hours',
+      transaction_timestamp() + interval '49 hours',
+      2,
+      0,
+      false
+    )
+  on conflict (id) do update
+  set
+    lesson_id = excluded.lesson_id,
+    starts_at = excluded.starts_at,
+    ends_at = excluded.ends_at,
+    capacity = excluded.capacity,
+    reserved_count = excluded.reserved_count,
+    is_open = excluded.is_open,
+    updated_at = statement_timestamp();
+
+  insert into public.reservations (
+    id,
+    lesson_id,
+    lesson_schedule_id,
+    learner_id,
+    coach_profile_id,
+    status,
+    reserved_price_amount,
+    confirmed_at,
+    cancelled_at,
+    cancellation_reason
+  )
+  values
+    (
+      '00000000-0000-4000-8000-000000000401',
+      '00000000-0000-4000-8000-000000000101',
+      '00000000-0000-4000-8000-000000000302',
+      todo3_learner,
+      '00000000-0000-4000-8000-000000000201',
+      'cancelled_by_user',
+      10001,
+      transaction_timestamp(),
+      transaction_timestamp(),
+      'E2E historical cancellation'
+    ),
+    (
+      '00000000-0000-4000-8000-000000000402',
+      '00000000-0000-4000-8000-000000000101',
+      '00000000-0000-4000-8000-000000000301',
+      todo3_learner,
+      '00000000-0000-4000-8000-000000000201',
+      'confirmed',
+      10001,
+      transaction_timestamp(),
+      null,
+      null
+    )
+  on conflict (id) do update
+  set
+    lesson_id = excluded.lesson_id,
+    lesson_schedule_id = excluded.lesson_schedule_id,
+    learner_id = excluded.learner_id,
+    coach_profile_id = excluded.coach_profile_id,
+    status = excluded.status,
+    reserved_price_amount = excluded.reserved_price_amount,
+    confirmed_at = excluded.confirmed_at,
+    cancelled_at = excluded.cancelled_at,
+    cancellation_reason = excluded.cancellation_reason,
+    payment_expires_at = null,
+    completed_at = null,
+    no_show_marked_at = null,
+    dispute_reason = null,
+    updated_at = statement_timestamp();
+
+  insert into public.payments (
+    id,
+    reservation_id,
+    payer_id,
+    status,
+    provider,
+    provider_order_id,
+    provider_payment_key,
+    amount,
+    approved_at,
+    failed_reason,
+    raw_payload
+  )
+  values
+    (
+      '00000000-0000-4000-8000-000000000501',
+      '00000000-0000-4000-8000-000000000401',
+      todo3_learner,
+      'paid',
+      'toss',
+      'spolink_00000000-0000-4000-8000-000000000401',
+      'local-seed-401',
+      10001,
+      transaction_timestamp(),
+      null,
+      jsonb_build_object(
+        'orderId', 'spolink_00000000-0000-4000-8000-000000000401',
+        'paymentKey', 'local-seed-401',
+        'status', 'DONE',
+        'totalAmount', 10001
+      )
+    ),
+    (
+      '00000000-0000-4000-8000-000000000502',
+      '00000000-0000-4000-8000-000000000402',
+      todo3_learner,
+      'paid',
+      'toss',
+      'spolink_00000000-0000-4000-8000-000000000402',
+      'local-seed-402',
+      10001,
+      transaction_timestamp(),
+      null,
+      jsonb_build_object(
+        'orderId', 'spolink_00000000-0000-4000-8000-000000000402',
+        'paymentKey', 'local-seed-402',
+        'status', 'DONE',
+        'totalAmount', 10001
+      )
+    )
+  on conflict (id) do update
+  set
+    reservation_id = excluded.reservation_id,
+    payer_id = excluded.payer_id,
+    status = excluded.status,
+    provider = excluded.provider,
+    provider_order_id = excluded.provider_order_id,
+    provider_payment_key = excluded.provider_payment_key,
+    amount = excluded.amount,
+    approved_at = excluded.approved_at,
+    failed_reason = excluded.failed_reason,
+    raw_payload = excluded.raw_payload,
+    updated_at = statement_timestamp();
+end;
+$$;
+
+create temp table todo3_actor (
+  actor_key text primary key,
+  id uuid not null
+) on commit drop;
+
+grant select on todo3_actor to anon, authenticated;
+
+insert into todo3_actor (actor_key, id)
+select 'learner', learner_id
+from public.reservations
+where id = '00000000-0000-4000-8000-000000000401';
+
+insert into todo3_actor (actor_key, id)
+select 'coach', user_id
+from public.coach_profiles
+where id = '00000000-0000-4000-8000-000000000201';
+
+insert into todo3_actor (actor_key, id)
+select 'pending_coach', user_id
+from public.coach_profiles
+where id = '00000000-0000-4000-8000-000000000202';
+
+insert into todo3_actor (actor_key, id)
+values
+  ('admin', '00000000-0000-4000-8000-000000000905'),
+  ('other_learner', '00000000-0000-4000-8000-000000000902');
+
+create temp table todo3_rpc_result (
+  reservation_id uuid,
+  reservation_status public.reservation_status,
+  cancelled_at timestamptz,
+  refund_id uuid,
+  refund_amount integer,
+  refund_status public.refund_status
+) on commit drop;
+
+grant insert, select, delete on todo3_rpc_result to authenticated;
+
+create function pg_temp.restore_todo3_cancellation(
+  checked_remaining interval,
+  checked_reservation_status public.reservation_status default 'confirmed',
+  checked_payment_status public.payment_status default 'paid'
+)
+returns void
+language plpgsql
+as $$
+declare
+  restored_learner_id uuid := (select id from todo3_actor where actor_key = 'learner');
+  restored_cancelled_at timestamptz := case
+    when checked_reservation_status in (
+      'cancelled_by_user', 'cancelled_by_coach', 'cancelled_by_admin'
+    ) then transaction_timestamp()
+    else null
+  end;
+begin
+  delete from public.refunds
+  where reservation_id = '00000000-0000-4000-8000-000000000402';
+
+  delete from public.notifications
+  where data ->> 'reservationId' = '00000000-0000-4000-8000-000000000402';
+
+  delete from public.audit_logs
+  where target_id in (
+    '00000000-0000-4000-8000-000000000402',
+    '00000000-0000-4000-8000-000000000502'
+  );
+
+  update public.lesson_schedules
+  set
+    starts_at = transaction_timestamp() + checked_remaining,
+    ends_at = transaction_timestamp() + checked_remaining + interval '1 hour',
+    capacity = 2,
+    reserved_count = case when checked_reservation_status = 'confirmed' then 1 else 0 end,
+    is_open = true
+  where id = '00000000-0000-4000-8000-000000000301';
+
+  update public.reservations
+  set
+    lesson_id = '00000000-0000-4000-8000-000000000101',
+    lesson_schedule_id = '00000000-0000-4000-8000-000000000301',
+    learner_id = restored_learner_id,
+    coach_profile_id = '00000000-0000-4000-8000-000000000201',
+    status = checked_reservation_status,
+    reserved_price_amount = 10001,
+    payment_expires_at = case
+      when checked_reservation_status = 'pending_payment'
+        then transaction_timestamp() + interval '10 minutes'
+      else null
+    end,
+    confirmed_at = case
+      when checked_reservation_status = 'confirmed' then transaction_timestamp()
+      else null
+    end,
+    cancelled_at = restored_cancelled_at,
+    cancellation_reason = case
+      when restored_cancelled_at is null then null
+      else 'Todo3 restored cancellation'
+    end,
+    completed_at = null,
+    no_show_marked_at = null,
+    dispute_reason = null
+  where id = '00000000-0000-4000-8000-000000000402';
+
+  update public.payments
+  set
+    reservation_id = '00000000-0000-4000-8000-000000000402',
+    payer_id = restored_learner_id,
+    status = checked_payment_status,
+    provider = 'toss',
+    provider_order_id = 'spolink_00000000-0000-4000-8000-000000000402',
+    provider_payment_key = case
+      when checked_payment_status = 'paid' then 'local-seed-402'
+      else null
+    end,
+    amount = 10001,
+    approved_at = case
+      when checked_payment_status = 'paid' then transaction_timestamp()
+      else null
+    end,
+    failed_reason = null,
+    raw_payload = case
+      when checked_payment_status = 'paid' then jsonb_build_object(
+        'orderId', 'spolink_00000000-0000-4000-8000-000000000402',
+        'paymentKey', 'local-seed-402',
+        'status', 'DONE',
+        'totalAmount', 10001
+      )
+      else null
+    end
+  where id = '00000000-0000-4000-8000-000000000502';
+
+  delete from todo3_rpc_result;
+end;
+$$;
+
+create function pg_temp.set_todo3_auth(checked_actor uuid, checked_role text default 'authenticated')
+returns void
+language sql
+as $$
+  select set_config(
+    'request.jwt.claims',
+    jsonb_build_object('sub', checked_actor, 'role', checked_role)::text,
+    true
+  );
+  select set_config('request.jwt.claim.sub', checked_actor::text, true);
+  select set_config('request.jwt.claim.role', checked_role, true);
+$$;
+
+create function pg_temp.todo3_sqlstate(checked_sql text)
+returns text
+language plpgsql
+as $$
+begin
+  execute checked_sql;
+  return null;
+exception
+  when others then
+    return sqlstate;
+end;
+$$;
+
+grant execute on function pg_temp.set_todo3_auth(uuid, text) to anon, authenticated;
+grant execute on function pg_temp.todo3_sqlstate(text) to anon, authenticated;

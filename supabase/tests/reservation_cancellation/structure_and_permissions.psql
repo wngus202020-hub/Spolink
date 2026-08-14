@@ -1,0 +1,86 @@
+select is(
+  (select count(*) from todo3_actor where actor_key = 'learner'),
+  1::bigint,
+  'actor lookup returns exactly one learner UUID from reservation 0401'
+);
+select isnt(
+  (select id from todo3_actor where actor_key = 'learner'),
+  null::uuid,
+  'actor lookup learner UUID is non-null'
+);
+select is(
+  (select count(*) from todo3_actor where actor_key = 'coach'),
+  1::bigint,
+  'actor lookup returns exactly one approved coach UUID from coach profile 0201'
+);
+select isnt(
+  (select id from todo3_actor where actor_key = 'coach'),
+  null::uuid,
+  'actor lookup approved coach UUID is non-null'
+);
+select is(
+  (select count(*) from todo3_actor where actor_key = 'pending_coach'),
+  1::bigint,
+  'actor lookup returns exactly one pending coach UUID from coach profile 0202'
+);
+select isnt(
+  (select id from todo3_actor where actor_key = 'pending_coach'),
+  null::uuid,
+  'actor lookup pending coach UUID is non-null'
+);
+select is(
+  (select count(*) from todo3_actor where actor_key = 'admin'),
+  1::bigint,
+  'actor lookup returns exactly one admin UUID by role and display name'
+);
+select isnt(
+  (select id from todo3_actor where actor_key = 'admin'),
+  null::uuid,
+  'actor lookup admin UUID is non-null'
+);
+select is(
+  (select count(*) from todo3_actor where actor_key = 'other_learner'),
+  1::bigint,
+  'actor lookup returns exactly one unrelated active learner UUID'
+);
+select isnt(
+  (select id from todo3_actor where actor_key = 'other_learner'),
+  null::uuid,
+  'actor lookup unrelated learner UUID is non-null'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from pg_class
+    where oid in (
+      'public.profiles'::regclass,
+      'public.lesson_schedules'::regclass,
+      'public.reservations'::regclass,
+      'public.payments'::regclass,
+      'public.refunds'::regclass,
+      'public.notifications'::regclass,
+      'public.audit_logs'::regclass
+    )
+      and relrowsecurity
+  ),
+  7,
+  'RLS is enabled on every cancellation table touched by Todo3'
+);
+
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'public.cancel_reservation(uuid,text)',
+    'EXECUTE'
+  ),
+  'permission authenticated may execute cancel_reservation'
+);
+select ok(
+  not has_function_privilege('anon', 'public.cancel_reservation(uuid,text)', 'EXECUTE'),
+  'permission anon may not execute cancel_reservation'
+);
+select ok(
+  not has_function_privilege('public', 'public.cancel_reservation(uuid,text)', 'EXECUTE'),
+  'permission public may not execute cancel_reservation'
+);

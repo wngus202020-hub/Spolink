@@ -1,0 +1,15 @@
+.next
+node_modules
+out
+coverage
+.supabase
+supabase/.temp
+.env
+.env.local
+.env.*.local
+*.log
+.omo
+.playwright-mcp
+.codegraph
+*.tsbuildinfo
+.DS_Store

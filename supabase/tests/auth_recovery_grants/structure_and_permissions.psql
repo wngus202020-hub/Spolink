@@ -1,0 +1,114 @@
+select has_schema('private', 'private schema exists for auth recovery grants');
+select has_table('private', 'password_recovery_grants', 'private recovery grant table exists');
+select has_column('private', 'password_recovery_grants', 'token_hash', 'token_hash column exists');
+select has_column('private', 'password_recovery_grants', 'user_id', 'user_id column exists');
+select has_column('private', 'password_recovery_grants', 'session_id', 'session_id column exists');
+select has_column('private', 'password_recovery_grants', 'expires_at', 'expires_at column exists');
+select has_column('private', 'password_recovery_grants', 'consumed_at', 'consumed_at column exists');
+select has_column('private', 'password_recovery_grants', 'created_at', 'created_at column exists');
+
+select ok(
+  (select relrowsecurity from pg_class where oid = 'private.password_recovery_grants'::regclass),
+  'RLS is enabled on private.password_recovery_grants'
+);
+select is(
+  (select count(*)::integer from pg_policies where schemaname = 'private' and tablename = 'password_recovery_grants'),
+  0,
+  'private.password_recovery_grants has no RLS policies'
+);
+
+select ok(
+  not has_table_privilege('public', 'private.password_recovery_grants', 'SELECT'),
+  'public has no table privileges'
+);
+select ok(
+  not has_table_privilege('anon', 'private.password_recovery_grants', 'SELECT'),
+  'anon has no table privileges'
+);
+select ok(
+  not has_table_privilege('authenticated', 'private.password_recovery_grants', 'SELECT'),
+  'authenticated has no direct table privileges'
+);
+
+select has_function(
+  'public',
+  'issue_password_recovery_grant',
+  array['text', 'timestamp with time zone'],
+  'issue_password_recovery_grant signature exists'
+);
+select function_returns(
+  'public',
+  'issue_password_recovery_grant',
+  array['text', 'timestamp with time zone'],
+  'boolean',
+  'issue_password_recovery_grant returns boolean'
+);
+select has_function(
+  'public',
+  'consume_password_recovery_grant',
+  array['text'],
+  'consume_password_recovery_grant signature exists'
+);
+select function_returns(
+  'public',
+  'consume_password_recovery_grant',
+  array['text'],
+  'boolean',
+  'consume_password_recovery_grant returns boolean'
+);
+
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'public.issue_password_recovery_grant(text,timestamptz)',
+    'EXECUTE'
+  ),
+  'authenticated may execute issue grant'
+);
+select ok(
+  has_function_privilege('authenticated', 'public.consume_password_recovery_grant(text)', 'EXECUTE'),
+  'authenticated may execute consume grant'
+);
+select ok(
+  not has_function_privilege('anon', 'public.issue_password_recovery_grant(text,timestamptz)', 'EXECUTE'),
+  'anon may not execute issue grant'
+);
+select ok(
+  not has_function_privilege('anon', 'public.consume_password_recovery_grant(text)', 'EXECUTE'),
+  'anon may not execute consume grant'
+);
+
+select ok(
+  lower(pg_get_functiondef('public.issue_password_recovery_grant(text,timestamptz)'::regprocedure))
+    like '%security definer%',
+  'issue grant is security definer'
+);
+select ok(
+  lower(pg_get_functiondef('public.consume_password_recovery_grant(text)'::regprocedure))
+    like '%security definer%',
+  'consume grant is security definer'
+);
+select ok(
+  regexp_replace(
+    lower(pg_get_functiondef('public.issue_password_recovery_grant(text,timestamptz)'::regprocedure)),
+    '[[:space:]]+',
+    '',
+    'g'
+  ) like '%checked_session_idtext:=nullif(auth.jwt()->>''session_id'','''')%',
+  'issue grant reads JWT session_id'
+);
+select ok(
+  regexp_replace(
+    lower(pg_get_functiondef('public.consume_password_recovery_grant(text)'::regprocedure)),
+    '[[:space:]]+',
+    '',
+    'g'
+  ) like '%checked_session_idtext:=nullif(auth.jwt()->>''session_id'','''')%',
+  'consume grant reads JWT session_id'
+);
+
+select ok(
+  pg_get_indexdef('private.password_recovery_grants_active_user_session_idx'::regclass)
+    like '%WHERE (consumed_at IS NULL)%',
+  'active grant index is partial on unconsumed grants'
+);

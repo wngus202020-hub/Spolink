@@ -1,0 +1,146 @@
+select pg_temp.restore_todo3_cancellation(interval '24 hours');
+set local role authenticated;
+select pg_temp.set_todo3_auth((select id from todo3_actor where actor_key = 'pending_coach'));
+select is(
+  pg_temp.todo3_sqlstate($$
+    select *
+    from public.cancel_reservation(
+      '00000000-0000-4000-8000-000000000402',
+      'Todo3 pending coach denied'
+    )
+  $$),
+  '42501',
+  'pending coach cancellation is denied with 42501'
+);
+reset role;
+select is(
+  (
+    select jsonb_build_object(
+      'reservationStatus', r.status,
+      'reservedCount', s.reserved_count,
+      'refunds', count(f.id)
+    )
+    from public.reservations r
+    join public.lesson_schedules s on s.id = r.lesson_schedule_id
+    left join public.refunds f on f.reservation_id = r.id
+    where r.id = '00000000-0000-4000-8000-000000000402'
+    group by r.status, s.reserved_count
+  ),
+  jsonb_build_object('reservationStatus', 'confirmed', 'reservedCount', 1, 'refunds', 0),
+  'pending coach denial rolls back reservation capacity and refund side effects'
+);
+
+select pg_temp.restore_todo3_cancellation(interval '24 hours');
+set local role authenticated;
+select pg_temp.set_todo3_auth((select id from todo3_actor where actor_key = 'other_learner'));
+select is(
+  pg_temp.todo3_sqlstate($$
+    select *
+    from public.cancel_reservation(
+      '00000000-0000-4000-8000-000000000402',
+      'Todo3 unrelated learner denied'
+    )
+  $$),
+  '42501',
+  'unrelated learner cancellation is denied with 42501'
+);
+reset role;
+select is(
+  (
+    select jsonb_build_object(
+      'reservationStatus', r.status,
+      'reservedCount', s.reserved_count,
+      'refunds', count(f.id)
+    )
+    from public.reservations r
+    join public.lesson_schedules s on s.id = r.lesson_schedule_id
+    left join public.refunds f on f.reservation_id = r.id
+    where r.id = '00000000-0000-4000-8000-000000000402'
+    group by r.status, s.reserved_count
+  ),
+  jsonb_build_object('reservationStatus', 'confirmed', 'reservedCount', 1, 'refunds', 0),
+  'unrelated learner denial rolls back reservation capacity and refund side effects'
+);
+
+select pg_temp.restore_todo3_cancellation(
+  interval '24 hours',
+  'pending_payment',
+  'ready'
+);
+set local role authenticated;
+select pg_temp.set_todo3_auth((select id from todo3_actor where actor_key = 'learner'));
+insert into todo3_rpc_result
+select *
+from public.cancel_reservation(
+  '00000000-0000-4000-8000-000000000402',
+  'Todo3 pending payment learner'
+);
+reset role;
+select is(
+  (select reservation_status::text from todo3_rpc_result),
+  'cancelled_by_user',
+  'pending payment learner cancellation returns cancelled_by_user'
+);
+select is(
+  (select refund_id from todo3_rpc_result),
+  null::uuid,
+  'pending payment learner cancellation returns no refund id'
+);
+select is(
+  (
+    select status::text
+    from public.payments
+    where id = '00000000-0000-4000-8000-000000000502'
+  ),
+  'cancelled',
+  'pending payment learner cancellation cancels the ready payment'
+);
+select is(
+  (select reserved_count from public.lesson_schedules where id = '00000000-0000-4000-8000-000000000301'),
+  0,
+  'pending payment learner cancellation does not mutate capacity'
+);
+
+select pg_temp.restore_todo3_cancellation(interval '24 hours');
+set local role authenticated;
+select pg_temp.set_todo3_auth((select id from todo3_actor where actor_key = 'coach'));
+select is(
+  pg_temp.todo3_sqlstate($$
+    update public.lesson_schedules
+    set reserved_count = 0
+    where id = '00000000-0000-4000-8000-000000000301'
+  $$),
+  '42501',
+  'non-admin approved coach direct reserved_count mutation is denied'
+);
+reset role;
+select is(
+  (select reserved_count from public.lesson_schedules where id = '00000000-0000-4000-8000-000000000301'),
+  1,
+  'non-admin direct reserved_count denial preserves capacity'
+);
+
+select pg_temp.restore_todo3_cancellation(interval '24 hours');
+select is(
+  (
+    select jsonb_build_object(
+      'reservationStatus', r.status,
+      'paymentStatus', p.status,
+      'reservedCount', s.reserved_count,
+      'generatedRefunds', count(f.id)
+    )
+    from public.reservations r
+    join public.payments p on p.reservation_id = r.id
+    join public.lesson_schedules s on s.id = r.lesson_schedule_id
+    left join public.refunds f on f.reservation_id = r.id
+    where r.id = '00000000-0000-4000-8000-000000000402'
+    group by r.status, p.status, s.reserved_count
+  ),
+  jsonb_build_object(
+    'reservationStatus', 'confirmed',
+    'paymentStatus', 'paid',
+    'reservedCount', 1,
+    'generatedRefunds', 0
+  ),
+  'scenario restore returns baseline rows before transaction rollback'
+);
