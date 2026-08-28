@@ -1,0 +1,125 @@
+insert into public.lesson_images (id, lesson_id, file_path, sort_order) values
+  ('85000000-0000-4000-8000-000000000051','84000000-0000-4000-8000-000000000005','84000000-0000-4000-8000-000000000005/86000000-0000-4000-8000-000000000051.jpg',0),
+  ('85000000-0000-4000-8000-000000000052','84000000-0000-4000-8000-000000000005','84000000-0000-4000-8000-000000000005/86000000-0000-4000-8000-000000000052.jpg',1),
+  ('85000000-0000-4000-8000-000000000053','84000000-0000-4000-8000-000000000005','84000000-0000-4000-8000-000000000005/86000000-0000-4000-8000-000000000053.jpg',2),
+  ('85000000-0000-4000-8000-000000000054','84000000-0000-4000-8000-000000000005','84000000-0000-4000-8000-000000000005/86000000-0000-4000-8000-000000000054.jpg',3),
+  ('85000000-0000-4000-8000-000000000061','84000000-0000-4000-8000-000000000006','84000000-0000-4000-8000-000000000006/86000000-0000-4000-8000-000000000061.png',0),
+  ('85000000-0000-4000-8000-000000000062','84000000-0000-4000-8000-000000000006','84000000-0000-4000-8000-000000000006/86000000-0000-4000-8000-000000000062.png',1),
+  ('85000000-0000-4000-8000-000000000063','84000000-0000-4000-8000-000000000006','84000000-0000-4000-8000-000000000006/86000000-0000-4000-8000-000000000063.png',2),
+  ('85000000-0000-4000-8000-000000000081','84000000-0000-4000-8000-000000000008','84000000-0000-4000-8000-000000000008/86000000-0000-4000-8000-000000000081.jpg',0);
+
+insert into public.lesson_images (id, lesson_id, file_path, sort_order, lifecycle_state) values
+  ('85000000-0000-4000-8000-000000000031','84000000-0000-4000-8000-000000000003','84000000-0000-4000-8000-000000000003/86000000-0000-4000-8000-000000000031.jpg',0,'ready'),
+  ('85000000-0000-4000-8000-000000000032','84000000-0000-4000-8000-000000000003','84000000-0000-4000-8000-000000000003/86000000-0000-4000-8000-000000000032.jpg',1,'deleting');
+
+select pg_temp.set_image_actor(null, 'anon');
+set local role anon;
+select is(
+  (select count(*) from public.lesson_images
+   where lesson_id = '84000000-0000-4000-8000-000000000003'),
+  1::bigint, 'anonymous public read excludes deleting images'
+);
+reset role;
+
+select pg_temp.set_image_actor('81000000-0000-4000-8000-000000000001');
+set local role authenticated;
+create temporary table fifth_intent on commit drop as
+select * from public.create_lesson_image_upload_intent(
+  '84000000-0000-4000-8000-000000000005', 'image/png', 100
+);
+select throws_ok(
+  $$select public.create_lesson_image_upload_intent(
+    '84000000-0000-4000-8000-000000000005','image/png',100)$$,
+  'P0001', 'LESSON_IMAGE_LIMIT', 'four ready plus active intent caps at five'
+);
+
+create temporary table reordered on commit drop as
+select * from public.reorder_lesson_images(
+  '84000000-0000-4000-8000-000000000006',
+  array['85000000-0000-4000-8000-000000000061','85000000-0000-4000-8000-000000000062','85000000-0000-4000-8000-000000000063']::uuid[],
+  array['85000000-0000-4000-8000-000000000063','85000000-0000-4000-8000-000000000061','85000000-0000-4000-8000-000000000062']::uuid[]
+);
+select is((select array_agg(id order by sort_order)::text from reordered),
+  '{85000000-0000-4000-8000-000000000063,85000000-0000-4000-8000-000000000061,85000000-0000-4000-8000-000000000062}',
+  'reorder applies requested cover order');
+select is((select array_agg(sort_order order by sort_order)::text from reordered),
+  '{0,1,2}', 'reorder stays dense');
+select throws_ok(
+  $$select public.reorder_lesson_images(
+    '84000000-0000-4000-8000-000000000006',
+    array['85000000-0000-4000-8000-000000000061','85000000-0000-4000-8000-000000000062','85000000-0000-4000-8000-000000000063']::uuid[],
+    array['85000000-0000-4000-8000-000000000063','85000000-0000-4000-8000-000000000061','85000000-0000-4000-8000-000000000062']::uuid[])$$,
+  'P0001', 'STALE_LESSON_IMAGES', 'stale expected array loses CAS'
+);
+select throws_ok(
+  $$select public.reorder_lesson_images(
+    '84000000-0000-4000-8000-000000000006',
+    array['85000000-0000-4000-8000-000000000063','85000000-0000-4000-8000-000000000061','85000000-0000-4000-8000-000000000062']::uuid[],
+    array['85000000-0000-4000-8000-000000000063','85000000-0000-4000-8000-000000000063','85000000-0000-4000-8000-000000000062']::uuid[])$$,
+  'P0001', 'STALE_LESSON_IMAGES', 'non-permutation has stable stale error'
+);
+
+create temporary table deleting on commit drop as
+select * from public.begin_delete_lesson_image(
+  '84000000-0000-4000-8000-000000000006',
+  '85000000-0000-4000-8000-000000000061',
+  array['85000000-0000-4000-8000-000000000063','85000000-0000-4000-8000-000000000061','85000000-0000-4000-8000-000000000062']::uuid[]
+);
+select is((select file_path from deleting),
+  '84000000-0000-4000-8000-000000000006/86000000-0000-4000-8000-000000000061.png',
+  'begin delete returns immutable path');
+select is((select file_path from public.begin_delete_lesson_image(
+  '84000000-0000-4000-8000-000000000006',
+  '85000000-0000-4000-8000-000000000061',
+  array['85000000-0000-4000-8000-000000000063','85000000-0000-4000-8000-000000000061','85000000-0000-4000-8000-000000000062']::uuid[]
+)), '84000000-0000-4000-8000-000000000006/86000000-0000-4000-8000-000000000061.png',
+  'begin delete retry resumes idempotently');
+select is((select array_agg(sort_order order by sort_order)::text
+  from public.lesson_images where lesson_id = '84000000-0000-4000-8000-000000000006'),
+  '{0,1}', 'owner select excludes deleting and ready order is dense');
+create temporary table finalized on commit drop as
+select * from public.finalize_delete_lesson_image(
+  '84000000-0000-4000-8000-000000000006','85000000-0000-4000-8000-000000000061'
+);
+select is((select array_agg(sort_order order by sort_order)::text from finalized),
+  '{0,1}', 'finalize compacts ready order');
+select is((select count(*) from public.finalize_delete_lesson_image(
+  '84000000-0000-4000-8000-000000000006','85000000-0000-4000-8000-000000000061'
+)), 2::bigint, 'missing finalize retry returns current list');
+select is((select file_path from public.begin_delete_lesson_image(
+  '84000000-0000-4000-8000-000000000006',
+  '85000000-0000-4000-8000-000000000061',
+  array['85000000-0000-4000-8000-000000000063','85000000-0000-4000-8000-000000000062']::uuid[]
+)), '84000000-0000-4000-8000-000000000006/86000000-0000-4000-8000-000000000061.png',
+  'exact begin retry returns the immutable deletion path from its receipt');
+select throws_ok(
+  $$select public.begin_delete_lesson_image(
+    '84000000-0000-4000-8000-000000000006',
+    '85000000-0000-4000-8000-000000000099',
+    array['85000000-0000-4000-8000-000000000063','85000000-0000-4000-8000-000000000062']::uuid[])$$,
+  'P0001', 'LESSON_IMAGE_NOT_FOUND', 'random missing image has no deletion retry proof'
+);
+select throws_ok(
+  $$select public.finalize_delete_lesson_image(
+    '84000000-0000-4000-8000-000000000006',
+    '85000000-0000-4000-8000-000000000099')$$,
+  'P0001', 'LESSON_IMAGE_NOT_FOUND', 'random finalize has no deletion retry proof'
+);
+reset role;
+select pg_temp.set_image_actor('81000000-0000-4000-8000-000000000004');
+set local role authenticated;
+select throws_ok(
+  $$select public.begin_delete_lesson_image(
+    '84000000-0000-4000-8000-000000000006',
+    '85000000-0000-4000-8000-000000000061',
+    array[]::uuid[])$$,
+  'P0001', 'LESSON_NOT_FOUND', 'foreign owner cannot probe deletion receipts'
+);
+reset role;
+select is((select count(*) from public.lesson_image_deletion_receipts
+  where lesson_id = '84000000-0000-4000-8000-000000000006'), 1::bigint,
+  'finalize stores one durable deletion receipt');
+delete from public.lessons where id = '84000000-0000-4000-8000-000000000006';
+select is((select count(*) from public.lesson_image_deletion_receipts
+  where lesson_id = '84000000-0000-4000-8000-000000000006'), 0::bigint,
+  'lesson deletion cascades deletion receipts');

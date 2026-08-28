@@ -1,4 +1,4 @@
-import type { Lesson, LessonMedia } from "@/lib/home-data"
+import type { Lesson, LessonMedia, LessonMediaImage } from "@/lib/home-data"
 import type { KstDateRange } from "@/lib/lesson-search"
 import type { LessonSchedulesQuery } from "@/lib/lessons/public-lesson-subroute-api"
 import type { Database } from "@/lib/supabase/database.types"
@@ -78,7 +78,10 @@ export function mapPublicLesson(
   }))
   const firstSchedule = schedules.at(0)
   const reviewStats = getReviewStats(related.reviews)
-  const media = mapLessonMedia(related.images.at(0)?.file_path)
+  const images = mapPublicLessonImages(related.images)
+  const media: LessonMedia = images[0]
+    ? { images, kind: "photo", src: images[0].url }
+    : { kind: "missing" }
 
   return {
     capacityText: firstSchedule?.capacityText ?? "일정 확인 필요",
@@ -194,6 +197,21 @@ export function mapLessonMedia(filePath: string | undefined): LessonMedia {
   const src = getSupabasePublicStorageUrl(filePath)
 
   return src && isSupabasePublicPhotoUrl(src) ? { kind: "photo", src } : { kind: "missing" }
+}
+
+function mapPublicLessonImages(
+  images: readonly PublicLessonImageRow[],
+): readonly LessonMediaImage[] {
+  return images
+    .filter((image) => image.lifecycle_state === "ready")
+    .toSorted(
+      (left, right) => left.sort_order - right.sort_order || left.id.localeCompare(right.id),
+    )
+    .flatMap((image) => {
+      const media = mapLessonMedia(image.file_path)
+
+      return media.kind === "photo" ? [{ sortOrder: image.sort_order, url: media.src }] : []
+    })
 }
 
 function isSafeStoragePhotoPath(filePath: string) {

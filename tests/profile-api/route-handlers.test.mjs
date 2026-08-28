@@ -50,6 +50,20 @@ test("profile GET route maps status outcomes and no-store/cookie headers", async
   ])
 })
 
+test("profile GET returns a stored noncanonical region byte-exact", async () => {
+  const { createGetCurrentProfileRouteHandler } = await import(
+    "../../lib/profile/route-handlers.ts"
+  )
+  const legacyRegion = "legacy  byte-exact region"
+  const harness = makeRouteHarness({ rows: [makeProfileRow({ defaultRegion: legacyRegion })] })
+
+  const response = await createGetCurrentProfileRouteHandler(harness.dependencies)()
+
+  assert.equal(response.status, 200)
+  assert.equal((await response.json()).data.defaultRegion, legacyRegion)
+  assert.equal(harness.rows[0]?.default_region, legacyRegion)
+})
+
 test("profile route handlers hide private database failures at the HTTP boundary", async () => {
   const { createGetCurrentProfileRouteHandler } = await import(
     "../../lib/profile/route-handlers.ts"

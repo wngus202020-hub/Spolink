@@ -1,0 +1,7 @@
+await import("./storage/opportunistic-cleanup.test.mjs")
+await import("./storage/opportunistic-cleanup-singleflight.test.mjs")
+await import("./storage/upload-intents.test.mjs")
+await import("./storage/blob-validation.test.mjs")
+await import("./storage/registration-compensation.test.mjs")
+await import("./storage/expired-cleanup.test.mjs")
+await import("./storage/deletion-recovery.test.mjs")

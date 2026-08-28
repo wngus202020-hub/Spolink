@@ -61,7 +61,7 @@ export async function readRaceState(sql, slot) {
         select amount, reason, source::text, status::text
         from public.refunds where reservation_id = ${slot.reservationId}
       ) row) as refunds,
-      (select coalesce(jsonb_agg(row_to_json(row) order by row.type, row.user_id::text), '[]')
+      (select coalesce(jsonb_agg(row_to_json(row) order by row.type::text, row.user_id::text), '[]')
        from (
         select user_id::text, type, data->>'status' as status
         from public.notifications where data->>'reservationId' = ${slot.reservationId}
@@ -85,17 +85,30 @@ export function assertCounts(state, expected) {
 }
 
 export function assertRaceStateSnapshot(state, expected) {
-  assert.deepEqual(normalizeState(state), expected)
+  assert.deepEqual(canonicalizeRaceState(state), expected)
 }
 
-function normalizeState(state) {
+export function canonicalizeRaceState(state) {
   return {
-    audits: state.audits,
-    notifications: state.notifications.map(({ status, type }) => ({ status, type })),
+    audits: state.audits.toSorted(
+      compareRows(["action", "target_type", "target_id", "refund_source", "refund_amount"]),
+    ),
+    notifications: state.notifications
+      .map(({ status, type, user_id }) => ({ status, type, user_id }))
+      .toSorted(compareRows(["type", "status", "user_id"])),
     payment: state.payment,
-    refunds: state.refunds,
+    refunds: state.refunds.toSorted(compareRows(["source", "amount", "reason", "status"])),
     reservation: state.reservation,
     reserved_count: state.reserved_count,
+  }
+}
+
+function compareRows(fields) {
+  return (left, right) => {
+    const leftKey = fields.map((field) => JSON.stringify(left[field])).join("\0")
+    const rightKey = fields.map((field) => JSON.stringify(right[field])).join("\0")
+    if (leftKey === rightKey) return 0
+    return leftKey < rightKey ? -1 : 1
   }
 }
 

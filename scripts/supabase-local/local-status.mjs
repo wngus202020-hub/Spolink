@@ -32,6 +32,7 @@ export async function readGuardedLocalStatus({
         shell: false,
         env: createSupabaseSealedEnv(env),
       },
+      preserveStdoutOnSuccess: true,
       timeoutMs: 180_000,
     }
     const result = await spawnRunner(spec)
@@ -54,6 +55,10 @@ export async function readGuardedLocalStatus({
     serviceRoleKey: raw[parsed.serviceKeyName],
     redacted: parsed.redacted,
   }
+}
+
+export async function readGuardedLocalStatusJson(statusJson) {
+  return readGuardedLocalStatus({ statusJson })
 }
 
 function isVerifiedNotRunningResult(result, projectId) {

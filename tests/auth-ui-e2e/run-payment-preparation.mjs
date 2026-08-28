@@ -2,6 +2,10 @@
 import path from "node:path"
 
 import { withConfiguredAuthMode } from "./lifecycle.mjs"
+import {
+  readPaymentObservables,
+  writeRedactedFailureOutput,
+} from "./payment-runner-failure-output.mjs"
 import { buildChildEnv, runBuffered, sha256, writeJsonMode600 } from "./process.mjs"
 import { prepareRawPlaywrightOutputDir } from "./raw-output.mjs"
 
@@ -42,9 +46,13 @@ async function main() {
             }),
           },
         )
+        const redactedFailureOutput =
+          result.exitCode === 0 ? null : await writeRedactedFailureOutput(outputPath, result)
         return {
           exitCode: result.exitCode,
+          observables: readPaymentObservables(result.stdout),
           rawOutputDirRetained: rawOutput.retained ? rawOutput.dir : null,
+          redactedFailureOutput,
           resultHash: sha256(`${result.stdout}${result.stderr}`),
           signal: result.signal,
           specs: [paymentSpec],

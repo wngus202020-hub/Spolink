@@ -10,8 +10,8 @@ Hosted configuration and provider deployment are not present.
 ```text
 supabase/
 ├── config.toml       # Local project `spolink`, loopback ports, Auth test URLs
-├── migrations/       # Ordered schema/RLS/RPC changes
-├── tests/            # SQL/psql permission and behavior tests
+├── migrations/       # Ordered schema/RLS/RPC changes; read child guide
+├── tests/            # SQL/psql permission and behavior tests; read child guide
 └── snippets/         # Reserved reference-SQL directory; currently empty
 ```
 

@@ -13,6 +13,7 @@ const reservationIds = {
   unavailable: "00000000-0000-4000-8000-000000000455",
 } as const
 const unavailablePaymentId = "00000000-0000-4000-8000-000000000555"
+const paymentObservablePrefix = "PAYMENT_E2E_OBSERVABLE_REDACTED "
 
 test("unauthenticated payment page preserves the requested next path", async ({ page }) => {
   await page.goto(`/reservations/${reservationIds.pending}/payment`)
@@ -30,6 +31,9 @@ test("pending payment prepares exactly once without checkout or confirmation", a
   const coachEmail = testEmail(testInfo, "payment-coach")
   const prepareBodies: unknown[] = []
   const forbiddenRequests: string[] = []
+  let browserConsoleErrorCount = 0
+  let pageErrorCount = 0
+  let requestFailureCount = 0
 
   try {
     const coach = await createLiveAuthSession(page, coachEmail, testPassword)
@@ -42,6 +46,15 @@ test("pending payment prepares exactly once without checkout or confirmation", a
       if (url.pathname === "/api/payments/confirm" || url.hostname.includes("toss")) {
         forbiddenRequests.push(request.url())
       }
+    })
+    page.on("console", (message) => {
+      if (message.type() === "error") browserConsoleErrorCount += 1
+    })
+    page.on("pageerror", () => {
+      pageErrorCount += 1
+    })
+    page.on("requestfailed", () => {
+      requestFailureCount += 1
     })
 
     await page.goto(`/reservations/${reservationIds.pending}/payment`)
@@ -69,6 +82,26 @@ test("pending payment prepares exactly once without checkout or confirmation", a
     expect(prepareBodies).toHaveLength(1)
     expect(forbiddenRequests).toEqual([])
     await capturePaymentScreenshot(page, testInfo.project.name, "ready")
+
+    const observable = {
+      browserConsoleErrorCount,
+      forbiddenRequestCount: forbiddenRequests.length,
+      pageErrorCount,
+      prepareRequestCount: prepareBodies.length,
+      project: testInfo.project.name,
+      readyPaymentRowCount: await readReadyPaymentCount(reservationIds.pending),
+      requestFailureCount,
+    }
+    expect(observable).toEqual({
+      browserConsoleErrorCount: 0,
+      forbiddenRequestCount: 0,
+      pageErrorCount: 0,
+      prepareRequestCount: 1,
+      project: testInfo.project.name,
+      readyPaymentRowCount: 1,
+      requestFailureCount: 0,
+    })
+    console.info(`${paymentObservablePrefix}${JSON.stringify(observable)}`)
   } finally {
     await cleanupPaymentFixtures()
     await cleanupLiveAuthUser(learnerEmail)
@@ -93,7 +126,7 @@ test("expired and unavailable reservation states never offer preparation", async
 
     for (const scenario of [
       { id: reservationIds.expired, title: "결제 준비 시간이 지났어요" },
-      { id: reservationIds.confirmed, title: "결제 처리가 끝난 예약이에요" },
+      { id: reservationIds.confirmed, title: "지금은 결제를 준비할 수 없어요" },
       { id: reservationIds.cancelled, title: "결제를 준비할 수 없는 예약이에요" },
       { id: reservationIds.unavailable, title: "지금은 결제를 준비할 수 없어요" },
     ]) {
@@ -161,15 +194,15 @@ async function seedPaymentFixtures({
 }
 
 async function expectReadyPaymentCount(reservationId: string, count: number) {
-  await expect
-    .poll(() =>
-      withDb(async (sql) => {
-        const [row] =
-          await sql`select count(*)::int as count from public.payments where reservation_id = ${reservationId} and status = 'ready'`
-        return row?.["count"] ?? 0
-      }),
-    )
-    .toBe(count)
+  await expect.poll(() => readReadyPaymentCount(reservationId)).toBe(count)
+}
+
+async function readReadyPaymentCount(reservationId: string) {
+  return withDb(async (sql) => {
+    const [row] =
+      await sql`select count(*)::int as count from public.payments where reservation_id = ${reservationId} and status = 'ready'`
+    return row?.["count"] ?? 0
+  })
 }
 
 async function cleanupPaymentFixtures() {

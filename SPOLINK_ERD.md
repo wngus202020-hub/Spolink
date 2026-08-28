@@ -130,6 +130,24 @@ auth.users
 | resolved | 조치 완료 |
 | rejected | 신고 사유 부족 |
 
+### action / target / notification enum
+
+저장 상태 enum은 row의 결과만 나타내고 요청 body에는 사용하지 않는다. mutation은 다음 action
+enum만 받아 현재 row를 잠근 workflow가 결과 상태를 파생한다.
+
+| enum | 허용 값 |
+|------|---------|
+| lesson_status_action | submit, pause, resume, close, approve, reject |
+| reservation_status_action | complete, mark_learner_no_show, mark_coach_no_show, open_dispute, cancel |
+| report_status_action | start_review, resolve, reject |
+| settlement_status_action | approve, hold |
+| refund_result_action | complete, fail |
+| report_target_type | user, coach, lesson, review, reservation |
+| notification_type | coach_certification.submitted, coach_certification.reviewed, reservation_confirmed, reservation_cancelled, reservation.completed, reservation.no_show, review.requested, report.resolved, refund.result, settlement.status_changed |
+
+`message`는 채팅이 구현되지 않은 MVP의 `report_target_type`에 포함하지 않는다. `paid`, `failed`
+정산 상태는 향후 payout provider용으로 예약되어 있고 local MVP action enum으로는 도달할 수 없다.
+
 ## 테이블 상세
 
 ### `profiles`
@@ -301,19 +319,64 @@ Storage 계약:
 
 ### `lesson_images`
 
-레슨 이미지.
+검증을 통과해 앱 조회에 등록된 레슨 이미지. 객체는 public `lesson-images` Storage bucket에 있고,
+DB 직접 mutation 대신 전용 RPC만 사용한다.
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
 | id | uuid | PK | 이미지 ID |
 | lesson_id | uuid | FK -> lessons.id | 레슨 |
-| file_path | text | not null | Storage 경로 |
-| sort_order | integer | default 0 | 노출 순서 |
+| file_path | text | not null, unique | 서버 생성 `<lessonId>/<objectId>.(jpg\|png\|webp)` 경로 |
+| sort_order | integer | 0..4 | 조밀한 노출 순서, 0은 표지 |
+| lifecycle_state | text | ready 또는 deleting | 공개 준비/재시도 가능한 물리 삭제 영수증 |
 | created_at | timestamptz | not null | 생성 시각 |
 
 인덱스:
 
-- `lesson_images(lesson_id, sort_order)`
+- `lesson_images(lesson_id, sort_order)`는 deferrable unique이며 레슨별 ready 순서를 `0..n-1`로 유지한다.
+- 레슨당 `ready` 이미지와 유효한 `pending` intent 합계는 부모 레슨 잠금 아래 최대 5다.
+  `deleting` 이미지가 있으면 새 intent/등록/검토 제출을 충돌로 막는다.
+- `ready`만 공개/앱 조회에 포함한다. `deleting`은 Storage remove/finalize 재시도를 위한 영수증이다.
+
+### `lesson_image_upload_intents`
+
+signed upload 전에 생성하는 소유권·검증·정리 영수증.
+
+| 컬럼 | 타입 | 제약 | 설명 |
+|------|------|------|------|
+| id | uuid | PK | intent ID |
+| lesson_id | uuid | FK -> lessons.id | 잠글 부모 레슨 |
+| coach_profile_id | uuid | FK -> coach_profiles.id | 서버가 인증 주체에서 파생한 소유자 |
+| user_id | uuid | FK -> profiles.id | 서버가 `auth.uid()`에서 파생한 사용자 |
+| object_name | text | unique, canonical | 서버 생성 immutable Storage object name |
+| mime_type | text | jpeg/png/webp만 | 요청 MIME과 실제 객체 검증 기준 |
+| size_bytes | bigint | 1..5,242,880 | 선언 크기 |
+| status | text | pending/claimed/registered/cleaned/cancelled | 수명주기 |
+| expires_at | timestamptz | not null | `statement_timestamp() + 2 hours` |
+| claim_token | uuid | nullable | cleanup 소유권 token |
+| claimed_at | timestamptz | nullable | bounded cleanup claim 시각 |
+| registered_image_id | uuid | nullable | 등록 성공 이미지 |
+| completed_at | timestamptz | nullable | 멱등 종료 시각 |
+| created_at | timestamptz | not null | 생성 시각 |
+| updated_at | timestamptz | not null | 갱신 시각 |
+
+### `lesson_image_deletion_receipts`
+
+물리 객체 삭제 후 메타데이터 finalize 재시도를 증명하는 멱등 영수증.
+
+| 컬럼 | 타입 | 제약 | 설명 |
+|------|------|------|------|
+| lesson_id | uuid | PK 일부, FK -> lessons.id | 레슨 |
+| image_id | uuid | PK 일부 | 삭제된 이미지 ID |
+| coach_profile_id | uuid | FK -> coach_profiles.id | 삭제 당시 지도자 |
+| user_id | uuid | FK -> profiles.id | 삭제 당시 사용자 |
+| file_path | text | canonical | 삭제한 immutable object name |
+| created_at | timestamptz | not null | finalize 시각 |
+
+승인 지도자가 소유한 `draft|rejected` 레슨만 intent 생성/등록/정렬/삭제 RPC를 실행한다. 모든
+RPC는 같은 부모 레슨 행을 잠그고 stale expected order, 최대 5개, 활성 intent/삭제와 검토 제출의
+경합을 원자적으로 판정한다. 일반 클라이언트와 service role의 테이블 직접 insert/update/delete,
+`storage.objects` 직접 변경은 revoke한다. 만료 cleanup claim/finalize만 서버 전용 경계다.
 
 ### `lesson_schedules`
 
@@ -337,6 +400,9 @@ Storage 계약:
 - `capacity > 0`
 - `reserved_count >= 0`
 - `reserved_count <= capacity`
+- `confirmed`, `completed`, `no_show_user`, `no_show_coach`, `disputed` 예약이 있으면
+  `lesson_id`, `starts_at`, `ends_at`, `capacity`는 잠긴다. `is_open` 종료는 허용한다.
+- `reserved_count`는 결제 확정/예약 취소 workflow만 갱신한다.
 
 인덱스:
 
@@ -372,6 +438,10 @@ Storage 계약:
 - `reserved_price_amount >= 0`
 - 결제 전 예약은 `payment_expires_at`을 가진다.
 - 같은 학습자가 같은 일정에 중복 확정 예약을 만들 수 없다.
+- `status`, 관계 ID, `reserved_price_amount`, actor/reviewer, 완료·취소·노쇼 시각은 직접 update할
+  수 없고 잠금 순서를 지키는 workflow RPC만 기록한다.
+- no-show는 KST 일정 시작 instant + 정확히 15분 이후에만 가능하다. 비교는 `timestamptz`와
+  `statement_timestamp()`로 수행해 클라이언트 타임존/시각 입력을 받지 않는다.
 
 인덱스:
 
@@ -541,7 +611,7 @@ Toss Payments 결제 검증 결과.
 |------|------|------|------|
 | id | uuid | PK | 신고 ID |
 | reporter_id | uuid | FK -> profiles.id | 신고자 |
-| target_type | text | not null | user, coach, lesson, review, reservation, message |
+| target_type | report_target_type | not null | user, coach, lesson, review, reservation |
 | target_id | uuid | not null | 대상 ID |
 | status | report_status | not null, default submitted | 처리 상태 |
 | reason | text | not null | 신고 사유 |
@@ -557,6 +627,9 @@ Toss Payments 결제 검증 결과.
 - `reports(reporter_id, created_at desc)`
 - `reports(target_type, target_id)`
 - `reports(status)`
+
+`reason`은 trim 후 1-100자, `detail`은 null 또는 trim 후 1-1,000자다. reporter/status/reviewer/
+reviewed_at은 workflow에서 파생하고 일반 사용자와 admin의 직접 insert/update/delete를 허용하지 않는다.
 
 ### `blocks`
 
@@ -588,7 +661,7 @@ Toss Payments 결제 검증 결과.
 |------|------|------|------|
 | id | uuid | PK | 알림 ID |
 | user_id | uuid | FK -> profiles.id | 수신자 |
-| type | text | not null | 알림 유형 |
+| type | notification_type | not null | 고정 알림 유형 |
 | title | text | not null | 제목 |
 | body | text | nullable | 내용 |
 | data | jsonb | nullable | 연결 데이터 |
@@ -599,6 +672,22 @@ Toss Payments 결제 검증 결과.
 
 - `notifications(user_id, created_at desc)`
 - `notifications(read_at)`
+
+`data`는 type별로 다음 key만 정확히 허용하고 중첩 객체/배열은 금지한다. 이 allowlist 밖의 이메일,
+전화, 주소, provider key, token/cookie, raw payload 키는 DB check에서 거절한다.
+
+| type | 필수 data key |
+|------|---------------|
+| coach_certification.submitted | coachProfileId, submittedAt |
+| coach_certification.reviewed | coachProfileId, decision, submittedAt |
+| reservation_confirmed | reservationId, paymentId |
+| reservation_cancelled | reservationId, status |
+| reservation.completed | reservationId |
+| reservation.no_show | reservationId, status |
+| review.requested | reservationId, lessonId |
+| report.resolved | reportId, status |
+| refund.result | refundId, reservationId, status |
+| settlement.status_changed | settlementId, reservationId, status |
 
 ### `audit_logs`
 
@@ -684,7 +773,7 @@ erDiagram
 
 - `sports` 중 `is_active = true`
 - `lessons` 중 `status = active`
-- `lesson_images` 중 공개 레슨에 연결된 이미지
+- `lesson_images` 중 공개 레슨에 연결된 `ready` 이미지
 - 승인된 `coach_profiles`의 공개 필드
 - `reviews` 중 `status = visible`
 
@@ -698,6 +787,12 @@ erDiagram
 - `settlements`: 해당 지도자와 관리자만
 - `reports`: 신고자와 관리자만
 - `audit_logs`: 관리자만
+- `lesson_image_upload_intents`: 소유자는 제한 조회만 가능하며 mutation은 전용 RPC만 허용
+
+`lesson-images` Storage bucket은 파일당 5 MiB와 JPEG/PNG/WebP를 제한하지만 public read 자체는
+의도적으로 허용한다. DB/API에서 삭제 즉시 제외하는 것은 보장하되 이미 알려진 CDN URL의 모든
+캐시를 즉시 회수한다고 보장하지 않는다. 만료 intent/고아 객체 cleanup은 현재 로컬 명령과 이미지
+mutation의 bounded 기회적 실행만 구현되어 있으며 Hosted scheduler/deployment는 후속 범위다.
 
 ## 상태 전이 규칙
 
@@ -735,6 +830,9 @@ completed
 - 학습자 취소 환불은 총 예약금액 `reserved_price_amount` 기준으로 `remaining >= 24h` 70%, `3h <= remaining < 24h` 50%, `remaining < 3h` 0%다. 계산 결과의 1원 미만 소수점은 버림한다.
 - 지도자와 관리자 취소 환불은 `reserved_price_amount`의 100%다.
 - `pending_payment` 취소는 ready 결제만 취소하고 환불이나 정원 변경을 만들지 않는다. `confirmed` 취소는 정원을 한 번만 복구하고 환불액이 0원보다 클 때 `reservation_cancellation` 환불 요청을 생성한다.
+- 완료/노쇼/분쟁/취소는 저장 status가 아니라 `reservation_status_action`을 입력받고, 동일 action과
+  동일 정규화 입력의 재시도만 멱등이다. 반대 action, stale 상태, 동시 요청은 잠근 예약 row에서
+  한 요청만 승리하고 나머지는 충돌한다.
 
 ### 결제
 
@@ -758,12 +856,12 @@ pending
 
 hold
   -> approved
-  -> failed
-
-approved
-  -> paid
-  -> failed
 ```
+
+local MVP의 workflow-only 전이는 위 범위다. `paid`, `failed`는 payout provider가 구현되기 전까지
+직접 update 또는 action으로 도달하지 않는다. 모든 금액 행은
+`net_amount = gross_amount - platform_fee_amount - payment_fee_amount - refund_amount`와
+공제 합계가 gross 이하인 DB 제약을 만족한다.
 
 ## 구현 전 결정 필요
 
@@ -772,7 +870,6 @@ approved
 - 정산 주기
 - 환불 수수료 부담 기준
 - 임시 예약 만료 시간
-- 수업 시작 후 노쇼 처리 대기 시간
 - 지도자 인증 SLA
 - 신고 누적 자동 제재 기준
 - 개인정보와 결제/정산 기록 보관 기간

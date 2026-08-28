@@ -10,10 +10,11 @@ export * from "./supabase-local/lock.mjs"
 export * from "./supabase-local/receipt.mjs"
 export * from "./supabase-local/spawn.mjs"
 export * from "./supabase-local/status-config.mjs"
+export * from "./supabase-local/stopped-state.mjs"
 
 import { runDoctor } from "./supabase-local/docker.mjs"
 import { runReset, runStart, runStatus, runStop, runTestDb } from "./supabase-local/lifecycle.mjs"
-import { assertStoppedState } from "./supabase-local/receipt.mjs"
+import { assertStoppedState } from "./supabase-local/stopped-state.mjs"
 
 async function main() {
   const command = process.argv[2]

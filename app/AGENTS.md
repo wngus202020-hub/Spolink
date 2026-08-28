@@ -9,12 +9,14 @@ Domain rules live in `lib/`; interactive state lives in `components/`.
 
 ```text
 app/
-├── api/             # Lessons, profiles, reservations, and payments Route Handlers
+├── admin/           # Back-office coach, lesson, report, reservation, settlement operations
+├── api/             # Public/private reads and workflow Route Handlers
 ├── auth/            # Login, signup, callback, recovery, logout, restricted account flows
+├── coach/           # Certification application plus approved-coach operations
 ├── lessons/         # Discovery, detail, and booking pages
-├── mypage/          # Profile, favorites, and reservation reads
+├── mypage/          # Authenticated member journeys; read `mypage/AGENTS.md`
 ├── onboarding/      # Required profile completion
-└── reservations/    # Payment page
+└── reservations/    # Payment and confirmed-and-paid completion pages
 ```
 
 ## ROUTE RULES
@@ -22,27 +24,43 @@ app/
 - Pages are Server Components unless browser state or events require a child client component.
 - Next 16 dynamic `params` and `searchParams` are promises; type and `await` them.
 - Cookie/auth-dependent pages use `dynamic = "force-dynamic"` and `revalidate = 0`.
-- Public pages still call `readPageAuthProfile()` to render account-aware navigation.
-- Protected pages resolve states in this order: unauthenticated/unconfigured to login with a safe
-  `next`, `profile_required` to onboarding, suspended/deleted through `readPageAuthProfile()`.
+- `readPageAuthProfile()` is the common page boundary: it redirects suspended/deleted accounts;
+  callers redirect unauthenticated/unconfigured users with a safe `next` and profile-required
+  users to onboarding.
+- `/mypage/profile` uses `readPageAuthProfile()` once for its Server Component initial data,
+  redirects anonymous/unconfigured users to `/auth/login?next=/mypage/profile`, redirects
+  profile-required users to `/onboarding/profile`, and leaves suspended/deleted handling to the
+  shared restricted-account boundary.
+- `readApprovedCoachPage(nextPath)` adds the approved `coach_profiles` plus profile-status check
+  for lesson authoring, coach reservations, and settlements. Applicant pages instead use the common
+  page boundary and route non-approved users through `/coach/apply` or `/coach/apply/status`.
+- Admin pages make an active-admin server check: authenticated, profile-ready, `role === "admin"`,
+  and `status === "active"`; otherwise redirect to login, onboarding, restricted, or `/mypage`.
+- Recheck resource ownership and current domain state in the server workflow/read boundary; a page
+  guard or client-visible status never authorizes a lesson edit, reservation transition, certificate
+  read, payment, completion, or calendar download.
 - Preserve query filters and KST date behavior when linking between discovery and detail surfaces.
+
+## LOCAL UI STATES
+
+- Keep route-local `loading.tsx` and `error.tsx` beside the affected segment where the tree already
+  uses them: admin lesson/report/reservation/settlement and coach lesson/reservation/settlement
+  surfaces, coach application status, and `/mypage/profile`.
+- Loading UI names the operational read and exposes an appropriate busy/status signal. Error UI is a
+  client boundary with Korean recovery copy and its supplied `reset`; preserve local visual tokens.
 
 ## API BOUNDARIES
 
 - Route files adapt `Request`/`NextResponse`; workflow and repository logic belongs in `lib/`.
-- Mutation order is same-origin, JSON content type, JSON parse, typed validation, configured state,
-  authenticated claims, then workflow.
-- Mutation responses, including errors, remain `Cache-Control: private, no-store`.
-- Ordinary routes use cookie-aware anon clients. Service-role clients are limited to trusted
-  payment confirmation/reconciliation boundaries.
+- API taxonomy and endpoint-specific guards are documented in `app/api/AGENTS.md`.
 - Keep public lesson GET routes filtered to active lessons and allowed public fields.
 
 ## ANTI-PATTERNS
 
 - Do not duplicate RLS or refund policy in page components.
 - Do not import server-only Supabase modules into client components.
-- Do not add middleware/proxy/loading/error conventions speculatively; none are current route-tree
-  patterns. The root `proxy.ts` is the existing request boundary.
+- Do not move or generalize existing segment-local loading/error boundaries; the root `proxy.ts`
+  remains the request boundary.
 - Do not turn coach guidance or favorite reads into provider mutations without updating contracts.
 - Coach applicant/admin routes must derive role, reviewer, status, and transition timestamps on the
   server; clients may submit form data but never authoritative certification state.

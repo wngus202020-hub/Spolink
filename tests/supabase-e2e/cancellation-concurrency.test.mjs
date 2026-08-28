@@ -114,7 +114,7 @@ if (forceTimeout) {
     const state = await readRaceState(observer, slots["420"])
     assert.equal(state.refunds[0].amount, 7000)
     assertCounts(state, { cancelAudits: 1, cancelNotifications: 1, cancellationRefunds: 1 })
-    assertCancelledState(state, slots["420"], "Todo7 duplicate")
+    assertCancelledState(state, expectedState(slots["420"], "Todo7 duplicate"))
     record("slot320", { result, state })
   })
 
@@ -132,7 +132,7 @@ if (forceTimeout) {
     assert.equal(result.B.body.error.code, "CONFLICT")
     const state = await readRaceState(observer, slots["421"])
     assertCounts(state, { cancelAudits: 1, cancelNotifications: 1, cancellationRefunds: 1 })
-    assertCancelledState(state, slots["421"], "Todo7 first reason")
+    assertCancelledState(state, expectedState(slots["421"], "Todo7 first reason"))
     record("slot321", { result, state })
   })
 
@@ -165,7 +165,10 @@ if (forceTimeout) {
       reconciliationRefunds: 1,
     })
     assert.equal(state.refunds[0].amount, 10001)
-    assertReconciledCancellationState(state, slots["422"], "Todo7 cancel before confirm")
+    assertReconciledCancellationState(
+      state,
+      expectedState(slots["422"], "Todo7 cancel before confirm"),
+    )
     record("slot322", { reconciliationWait, result, state })
   })
 
@@ -193,7 +196,10 @@ if (forceTimeout) {
       reconciliationRefunds: 0,
     })
     assert.equal(state.refunds[0].amount, 7000)
-    assertConfirmedThenCancelledState(state, slots["423"], "Todo7 confirm before cancel")
+    assertConfirmedThenCancelledState(
+      state,
+      expectedState(slots["423"], "Todo7 confirm before cancel"),
+    )
     record("slot323", { result, state })
   })
 
@@ -225,7 +231,10 @@ if (forceTimeout) {
       reconciliationRefunds: 1,
     })
     assert.equal(afterRepeat.refunds[0].amount, 10001)
-    assertReconciledCancellationState(afterRepeat, slots["424"], "Todo7 reconciliation race")
+    assertReconciledCancellationState(
+      afterRepeat,
+      expectedState(slots["424"], "Todo7 reconciliation race"),
+    )
     record("slot324", { result, state: afterRepeat })
   })
 }
@@ -240,6 +249,10 @@ async function runConfirm(slot) {
 
 function record(name, value) {
   observations.push({ name, sha256: sha256(JSON.stringify(value)), value })
+}
+
+function expectedState(slot, reason) {
+  return { authIds: provision.authIds, reason, slot }
 }
 
 function sha256(value) {

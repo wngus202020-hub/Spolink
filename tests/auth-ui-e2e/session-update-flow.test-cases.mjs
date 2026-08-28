@@ -11,7 +11,7 @@ import {
   testSecret,
 } from "./session-route-helpers.mjs"
 
-test("same-origin validation accepts the browser Origin matching the preserved Host", async () => {
+test("same-origin validation accepts the managed loopback browser Origin", async () => {
   const { hasSameOrigin } = await import("../../lib/auth/route-security.ts")
   const request = new Request("http://localhost:4321/auth/update-password/submit", {
     headers: {
@@ -24,17 +24,63 @@ test("same-origin validation accepts the browser Origin matching the preserved H
   assert.equal(hasSameOrigin(request), true)
 })
 
-test("same-origin validation rejects an Origin matching neither URL nor Host", async () => {
+test("same-origin validation rejects attacker-controlled matching Host and Origin", async () => {
   const { hasSameOrigin } = await import("../../lib/auth/route-security.ts")
   const request = new Request("http://localhost:4321/auth/update-password/submit", {
     headers: {
-      host: "127.0.0.1:4321",
-      origin: "https://evil.test",
+      host: "attacker.example:4321",
+      origin: "http://attacker.example:4321",
     },
     method: "POST",
   })
 
   assert.equal(hasSameOrigin(request), false)
+})
+
+test("same-origin validation rejects malformed and mismatched origins", async () => {
+  const { hasSameOrigin } = await import("../../lib/auth/route-security.ts")
+  const cases = [
+    { name: "missing", origin: null },
+    { name: "malformed", origin: "://invalid-origin" },
+    { name: "path-bearing", origin: "http://localhost:4321/not-an-origin" },
+    { name: "cross-origin", origin: "http://attacker.example:4321" },
+    { name: "protocol mismatch", origin: "https://127.0.0.1:4321" },
+    { name: "port mismatch", origin: "http://127.0.0.1:4322" },
+    { name: "public-host alias", origin: "http://www.service.example:4321" },
+  ]
+
+  for (const testCase of cases) {
+    const headers = new Headers()
+    if (testCase.origin !== null) headers.set("origin", testCase.origin)
+    if (testCase.name === "public-host alias") headers.set("host", "www.service.example:4321")
+    const url =
+      testCase.name === "public-host alias"
+        ? "http://service.example:4321/auth/update-password/submit"
+        : "http://localhost:4321/auth/update-password/submit"
+    const request = new Request(url, { headers, method: "POST" })
+    assert.equal(hasSameOrigin(request), false, testCase.name)
+  }
+})
+
+test("same-origin validation accepts an exact public request URL Origin", async () => {
+  const { hasSameOrigin } = await import("../../lib/auth/route-security.ts")
+  const request = new Request("https://service.example/account", {
+    headers: { origin: "https://service.example" },
+    method: "POST",
+  })
+
+  assert.equal(hasSameOrigin(request), true)
+})
+
+test("same-origin validation accepts only same-protocol same-port loopback aliases", async () => {
+  const { hasSameOrigin } = await import("../../lib/auth/route-security.ts")
+  for (const [url, origin] of [
+    ["http://localhost:4321/submit", "http://127.0.0.1:4321"],
+    ["http://127.0.0.1:4321/submit", "http://[::1]:4321"],
+    ["https://[::1]/submit", "https://localhost"],
+  ]) {
+    assert.equal(hasSameOrigin(new Request(url, { headers: { origin }, method: "POST" })), true)
+  }
 })
 
 test("update submit consumes grant before provider update and clears recovery marker", async () => {

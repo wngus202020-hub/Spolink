@@ -7,6 +7,8 @@ import { appendRedactedEvidence } from "../evidence-redaction.mjs"
 import { sha256, writeRedactedOutput } from "./process.mjs"
 
 export async function appendTodo8RunEvidence({
+  cleanupCommand,
+  cleanupProofPath,
   evidenceLog,
   exitCode,
   outputDir,
@@ -16,7 +18,8 @@ export async function appendTodo8RunEvidence({
   const resolvedOutputDir = outputDir ?? (await resolveSupabaseOutputDir())
   const summary = await readFile(summaryPath)
   const outputSha = sha256(summary)
-  const cleanupSha = sha256(await readFile(`${resolvedOutputDir}/assert-stopped.json`))
+  const resolvedCleanupPath = cleanupProofPath ?? `${resolvedOutputDir}/assert-stopped.json`
+  const cleanupSha = sha256(await readFile(resolvedCleanupPath))
   const db = qaSuccess?.summary.db.cancelled ?? {
     notApplicable: true,
     reason: "run exited before durable Todo8 QA database proof completed",
@@ -43,7 +46,8 @@ export async function appendTodo8RunEvidence({
       db,
       http,
       cleanup: {
-        command: "corepack pnpm supabase:stop && corepack pnpm supabase:assert-stopped",
+        command:
+          cleanupCommand ?? "corepack pnpm supabase:stop && corepack pnpm supabase:assert-stopped",
         exitCode: 0,
         proofSha256: cleanupSha,
       },
@@ -56,9 +60,19 @@ export async function appendTodo8RunEvidence({
 export async function writeTodo8Summary(context, status, error, summaryPath) {
   await writeRedactedOutput(summaryPath, {
     before3002: context.before3002,
+    cleanupState: context.cleanupCoordinator?.state ?? null,
     cleanupError: context.cleanupError instanceof Error ? context.cleanupError.message : null,
     error: error instanceof Error ? error.message : null,
     qaSuccessPath: context.qaSuccess?.path ?? null,
+    signalCleanupFailed: context.signalCleanupError instanceof Error,
+    supabaseCleanup: context.supabaseRuntime
+      ? {
+          assertCompleted: context.supabaseRuntime.cleanup.assertCompleted,
+          state: context.supabaseRuntime.cleanup.state,
+          stopCompleted: context.supabaseRuntime.cleanup.stopCompleted,
+        }
+      : null,
+    supabaseRuntimeMode: context.supabaseRuntime?.mode ?? null,
     selectedNextPorts: [context.unconfigured?.port, context.configured?.port].filter(Boolean),
     status,
   })

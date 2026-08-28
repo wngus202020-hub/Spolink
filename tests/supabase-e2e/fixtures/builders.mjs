@@ -2,6 +2,8 @@ import { expandFixedId, fixedIds } from "./ids.mjs"
 import { policySlots, raceSlots } from "./slots.mjs"
 import { fixtureUsers } from "./users.mjs"
 
+const fixtureSlots = [...policySlots, ...raceSlots]
+
 export function buildFixtureRows({ epoch, authIds, tennisSportId }) {
   requireAuthIds(authIds)
   const epochDate = new Date(epoch)
@@ -17,20 +19,11 @@ export function buildFixtureRows({ epoch, authIds, tennisSportId }) {
     schedules: [
       scheduleRow(fixedIds.baselineOpenSchedule, plusHours(25), plusHours(26), 1, true),
       scheduleRow(fixedIds.baselineClosedSchedule, plusHours(48), plusHours(49), 0, false),
-      ...policySlots.map((slot) =>
+      ...fixtureSlots.map((slot, uniquenessOrdinal) =>
         scheduleRow(
           expandFixedId(slot.suffix),
-          plusHours(slot.startsInHours),
-          plusHours(slot.startsInHours + 1),
-          slot.reservedCount,
-          false,
-        ),
-      ),
-      ...raceSlots.map((slot) =>
-        scheduleRow(
-          expandFixedId(slot.suffix),
-          plusHours(slot.startsInHours),
-          plusHours(slot.startsInHours + 1),
+          plusHours(slot.startsInHours + fixtureScheduleOffsetHours(slot, uniquenessOrdinal)),
+          plusHours(slot.startsInHours + 1 + fixtureScheduleOffsetHours(slot, uniquenessOrdinal)),
           slot.reservedCount,
           false,
         ),
@@ -53,7 +46,7 @@ export function buildFixtureRows({ epoch, authIds, tennisSportId }) {
         status: "confirmed",
         confirmedAt: epochDate.toISOString(),
       }),
-      ...[...policySlots, ...raceSlots].map((slot) =>
+      ...fixtureSlots.map((slot) =>
         reservationRow({
           id: expandFixedId(slot.reservation),
           scheduleId: expandFixedId(slot.suffix),
@@ -79,7 +72,7 @@ export function buildFixtureRows({ epoch, authIds, tennisSportId }) {
         "local-seed-402",
         epochDate.toISOString(),
       ),
-      ...[...policySlots, ...raceSlots].map((slot) =>
+      ...fixtureSlots.map((slot) =>
         paymentRow({
           id: expandFixedId(slot.payment),
           reservationId: expandFixedId(slot.reservation),
@@ -92,6 +85,12 @@ export function buildFixtureRows({ epoch, authIds, tennisSportId }) {
     ],
     refunds: [historyRefund(authIds.learner)],
   }
+}
+
+export function fixtureScheduleOffsetHours({ startsInHours }, uniquenessOrdinal) {
+  if (startsInHours >= 24) return uniquenessOrdinal + 2
+  if (startsInHours >= 3) return 1
+  return startsInHours >= 2 ? -1 : 0
 }
 
 function buildProfiles(authIds) {

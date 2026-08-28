@@ -1,0 +1,136 @@
+select pg_temp.hasnt_table_privilege(
+  checked_role,
+  checked_relation,
+  'TRUNCATE',
+  format('%s cannot truncate %s', checked_role, checked_relation)
+)
+from (values ('anon'::name), ('authenticated'::name), ('service_role'::name)) roles(checked_role)
+	cross join (values
+	  ('public.lesson_images'::text),
+	  ('public.lesson_image_upload_intents'::text),
+	  ('public.lesson_image_deletion_receipts'::text)
+	) relations(checked_relation);
+
+select is(
+  (
+    select count(*)
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name in ('lesson_images', 'lesson_image_upload_intents')
+      and column_default like 'nextval(%'
+  ),
+  0::bigint,
+  'lesson image tables have no sequences requiring grants'
+);
+
+with required_functions(signature, allowed_role) as (values
+  ('public.create_lesson_image_upload_intent(uuid,text,bigint)', 'authenticated'),
+  ('public.cancel_lesson_image_upload_intent(uuid,uuid,text)', 'authenticated'),
+  ('public.register_validated_lesson_image(uuid,uuid,text)', 'service_role'),
+  ('public.reorder_lesson_images(uuid,uuid[],uuid[])', 'authenticated'),
+  ('public.begin_delete_lesson_image(uuid,uuid,uuid[])', 'authenticated'),
+  ('public.finalize_delete_lesson_image(uuid,uuid)', 'authenticated'),
+  ('public.claim_expired_lesson_image_upload_intents(integer)', 'service_role'),
+  ('public.finalize_lesson_image_upload_intent_cleanup(uuid,uuid,boolean)', 'service_role')
+)
+select ok(
+  not exists (
+    select 1
+    from pg_proc function_row
+    cross join lateral aclexplode(
+      coalesce(function_row.proacl, acldefault('f', function_row.proowner))
+    ) function_acl
+    where function_row.oid = to_regprocedure(required_functions.signature)
+      and function_acl.grantee = 0
+      and function_acl.privilege_type = 'EXECUTE'
+  ),
+  format('PUBLIC has no default execute on %s', signature)
+)
+from required_functions;
+
+with required_functions(signature, allowed_role) as (values
+  ('public.create_lesson_image_upload_intent(uuid,text,bigint)', 'authenticated'),
+  ('public.cancel_lesson_image_upload_intent(uuid,uuid,text)', 'authenticated'),
+  ('public.register_validated_lesson_image(uuid,uuid,text)', 'service_role'),
+  ('public.reorder_lesson_images(uuid,uuid[],uuid[])', 'authenticated'),
+  ('public.begin_delete_lesson_image(uuid,uuid,uuid[])', 'authenticated'),
+  ('public.finalize_delete_lesson_image(uuid,uuid)', 'authenticated'),
+  ('public.claim_expired_lesson_image_upload_intents(integer)', 'service_role'),
+  ('public.finalize_lesson_image_upload_intent_cleanup(uuid,uuid,boolean)', 'service_role')
+), checked_roles(role_name) as (values ('anon'), ('authenticated'), ('service_role'))
+select is(
+  has_function_privilege(role_name, signature, 'EXECUTE'),
+  role_name = allowed_role,
+  format('%s execute on %s matches least privilege', role_name, signature)
+)
+from required_functions cross join checked_roles;
+with authenticated_owner_functions(signature) as (values
+  ('public.create_lesson_image_upload_intent(uuid,text,bigint)'),
+  ('public.cancel_lesson_image_upload_intent(uuid,uuid,text)'),
+  ('public.reorder_lesson_images(uuid,uuid[],uuid[])'),
+  ('public.begin_delete_lesson_image(uuid,uuid,uuid[])'),
+  ('public.finalize_delete_lesson_image(uuid,uuid)')
+)
+select is((select count(*) from authenticated_owner_functions), 5::bigint,
+  'authenticated owner image RPC permission matrix excludes validated registration');
+select ok(not has_table_privilege(
+  'authenticated', 'public.lesson_images', 'INSERT,UPDATE,DELETE'
+), 'user direct image writes are revoked');
+select ok(not has_table_privilege(
+  'authenticated', 'public.lesson_image_upload_intents', 'INSERT,UPDATE,DELETE'
+), 'user direct intent writes are revoked');
+select ok(not has_table_privilege(
+  'service_role', 'public.lesson_images', 'INSERT,UPDATE,DELETE'
+), 'service role direct image writes are revoked');
+select ok(not has_table_privilege(
+  'service_role', 'public.lesson_image_upload_intents', 'INSERT,UPDATE,DELETE'
+), 'service role direct intent writes are revoked');
+select throws_ok(
+  $$select public.register_lesson_image(
+    '85000000-0000-4000-8000-000000000001', 'object.jpg')$$,
+  '42883', null, 'old registration signature cannot be resolved'
+);
+set local role authenticated;
+select throws_ok(
+  $$select public.register_validated_lesson_image(
+    '81000000-0000-4000-8000-000000000001',
+    '85000000-0000-4000-8000-000000000001', 'object.jpg')$$,
+  '42501', null, 'authenticated cannot call validated registration directly'
+);
+reset role;
+select ok(not has_table_privilege(
+  'anon', 'public.lesson_image_deletion_receipts', 'SELECT,INSERT,UPDATE,DELETE'
+), 'anonymous receipt access is revoked');
+select ok(not has_table_privilege(
+  'authenticated', 'public.lesson_image_deletion_receipts', 'SELECT,INSERT,UPDATE,DELETE'
+), 'authenticated receipt access is revoked');
+select ok(not has_table_privilege(
+  'service_role', 'public.lesson_image_deletion_receipts', 'SELECT,INSERT,UPDATE,DELETE'
+), 'service role receipt access is revoked');
+select is(
+  (select count(*) from pg_policies where schemaname = 'storage' and tablename = 'objects'
+   and policyname like 'lesson_image_objects_%'),
+  3::bigint, 'storage has public read plus intent-gated insert and delete policies'
+);
+select is(
+  (select count(*) from pg_policies where schemaname = 'storage' and tablename = 'objects'
+   and policyname = 'lesson_image_objects_intent_update'),
+  0::bigint, 'pending lesson image objects cannot be updated by authenticated owners'
+);
+select ok(
+  (select bool_and(prosecdef and proconfig @> array['search_path=public'])
+   from pg_proc join pg_namespace on pg_namespace.oid = pronamespace
+   where nspname = 'public' and proname in (
+     'create_lesson_image_upload_intent', 'cancel_lesson_image_upload_intent',
+     'reorder_lesson_images',
+     'begin_delete_lesson_image', 'finalize_delete_lesson_image',
+     'claim_expired_lesson_image_upload_intents',
+     'finalize_lesson_image_upload_intent_cleanup'
+   )), 'RPCs are security definer with fixed public search path'
+);
+select ok(
+  (select prosecdef and proconfig @> array['search_path=public, storage']
+   from pg_proc join pg_namespace on pg_namespace.oid = pronamespace
+   where nspname = 'public' and proname = 'register_validated_lesson_image'),
+  'registration has a fixed public and storage search path'
+);

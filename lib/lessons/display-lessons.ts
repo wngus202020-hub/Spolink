@@ -5,6 +5,7 @@ import {
   matchesLessonSearchDate,
   parseKstDateRange,
 } from "@/lib/lesson-search"
+import { readPublicLessonImages } from "@/lib/lessons/display-lesson-image-reader"
 import * as displayLessonMapper from "@/lib/lessons/display-lesson-mapper"
 import type { LessonSchedulesQuery } from "@/lib/lessons/public-lesson-subroute-api"
 import { createSupabasePublicReadClient } from "@/lib/supabase/public-read-client"
@@ -117,7 +118,7 @@ async function readPublicLessons(
       : publicScheduleRowsPromise
   const [imageRows, publicScheduleRows, responseScheduleRows, reviewRows, sportRows, coachCards] =
     await Promise.all([
-      readImages(lessonIds),
+      readPublicLessonImages(lessonIds),
       publicScheduleRowsPromise,
       responseScheduleRowsPromise,
       readReviews(lessonIds),
@@ -177,26 +178,6 @@ async function readEligibleLessonIds(range: KstDateRange) {
       data.filter(displayLessonMapper.hasRemainingCapacity).map((schedule) => schedule.lesson_id),
     ),
   ])
-}
-
-async function readImages(lessonIds: readonly string[]) {
-  const supabase = createSupabasePublicReadClient()
-
-  if (!supabase || lessonIds.length === 0) {
-    return displayLessonMapper.success(
-      new Map<string, readonly displayLessonMapper.PublicLessonImageRow[]>(),
-    )
-  }
-
-  const { data, error } = await supabase
-    .from("lesson_images")
-    .select("*")
-    .in("lesson_id", [...lessonIds])
-    .order("sort_order", { ascending: true })
-
-  return error
-    ? displayLessonMapper.failure()
-    : displayLessonMapper.success(displayLessonMapper.groupByLessonId(data))
 }
 
 async function readSchedules(

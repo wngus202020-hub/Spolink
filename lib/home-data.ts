@@ -4,6 +4,7 @@ import type { Lesson, TrustMetric } from "@/lib/home-data-types"
 export type {
   Lesson,
   LessonMedia,
+  LessonMediaImage,
   LessonReview,
   LessonSchedule,
   LessonStatus,

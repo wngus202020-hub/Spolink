@@ -215,7 +215,6 @@ test("auth lifecycle manifest has the exact per-run ownership shape", () => {
     evidencePaths: [".omo/evidence/run/receipt.json"],
     mode: "confirmation-off",
     runId: "todo2-shape",
-    tempPaths: ["/tmp/spolink-owned"],
   })
 
   assert.deepEqual(manifest, {
@@ -226,7 +225,7 @@ test("auth lifecycle manifest has the exact per-run ownership shape", () => {
     mailpitMessageIds: [],
     configSnapshotHash: "a".repeat(64),
     ownedPids: [],
-    tempPaths: ["/tmp/spolink-owned"],
+    tempPaths: [],
     evidencePaths: [".omo/evidence/run/receipt.json"],
   })
   assert.deepEqual(Object.keys(manifest), [
@@ -248,6 +247,15 @@ test("auth lifecycle manifest rejects malformed run identity", () => {
     /runId is required/,
   )
   assert.throws(() => createRunManifest({ mode: "", runId: "todo2" }), /mode is required/)
+  assert.throws(
+    () =>
+      createRunManifest({
+        mode: "confirmation-off",
+        runId: "todo2",
+        tempPaths: ["/tmp/arbitrary"],
+      }),
+    /Arbitrary temp paths are rejected/u,
+  )
 })
 
 test("cleanup failure remains terminal after a prior lifecycle failure", () => {

@@ -1,0 +1,12 @@
+.codegraph
+.debug-journal.md
+.env*
+.next
+.omo
+.playwright-mcp
+.supabase
+.vercel
+coverage
+node_modules
+supabase/.temp
+*.log

@@ -53,6 +53,14 @@ function HeaderAccountAction({ auth }: PublicHeaderProps) {
         <span className="min-w-0 max-w-32 whitespace-normal break-words text-right text-sm font-bold leading-normal text-primary sm:max-w-48">
           {auth.profile.display_name}
         </span>
+        {auth.profile.role === "admin" && auth.profile.status === "active" ? (
+          <Link
+            className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-[var(--radius-pill)] bg-inset px-3 py-2 font-bold text-primary hover:bg-accent-soft sm:px-4"
+            href="/admin"
+          >
+            관리자
+          </Link>
+        ) : null}
         <Link
           className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-[var(--radius-pill)] bg-inset px-3 py-2 font-bold text-primary hover:bg-accent-soft sm:px-4"
           href="/mypage"

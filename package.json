@@ -10,7 +10,11 @@
     "build": "next build",
     "start": "next start --hostname 127.0.0.1",
     "test:api": "node tests/auth-ui-e2e/run-api-tests.mjs",
-    "test:api:contracts": "node --test tests/*.test.mjs tests/profile-api/*.test.mjs tests/coach-certification/*.test.mjs tests/auth-ui-e2e/coach-applicant-runner.test.mjs",
+    "test:api:contracts": "node tests/run-api-contracts.mjs",
+    "test:api:live": "node tests/auth-ui-e2e/run-api-tests.mjs",
+    "test:money-operations:live": "node --test --test-concurrency=1 tests/money-operations-concurrency.test.mjs",
+    "test:high-priority:contracts": "node tests/high-priority-missing-services/run-contracts.mjs",
+    "test:task-11": "node tests/high-priority-missing-services/run-task-11.mjs",
     "test:coach-certification": "node --test tests/coach-certification/*.test.mjs tests/coach-apply-phase1-contract.test.mjs tests/auth-ui-e2e/coach-applicant-runner.test.mjs",
     "supabase:start": "node scripts/supabase-local.mjs start",
     "supabase:status": "node scripts/supabase-local.mjs status",
@@ -19,11 +23,15 @@
     "supabase:stop": "node scripts/supabase-local.mjs stop",
     "supabase:assert-stopped": "node scripts/supabase-local.mjs assert-stopped",
     "supabase:doctor": "node scripts/supabase-local.mjs doctor",
+    "lesson-images:cleanup": "node scripts/lesson-images-cleanup.mjs",
     "test:e2e:supabase": "node tests/supabase-e2e/run.mjs",
     "test:e2e:auth": "node tests/auth-ui-e2e/run.mjs && node tests/auth-ui-e2e/run-booking-confirmation.mjs && node tests/auth-ui-e2e/run-coach-certification.mjs",
     "test:e2e:payment": "node tests/auth-ui-e2e/run-payment-preparation.mjs",
     "test:e2e:reservations": "node tests/auth-ui-e2e/run-learner-reservations.mjs",
+    "test:e2e:profile-edit": "node tests/auth-ui-e2e/run-mypage-profile-edit.mjs",
     "test:e2e:direction-alignment": "node tests/auth-ui-e2e/run-direction-alignment.mjs .omo/evidence/opencode-direction-alignment/task-14-visual-qa.json",
+    "test:e2e:task-10": "node tests/auth-ui-e2e/run-task-10-ui.mjs .omo/evidence/high-priority-missing-services/task-10/ui.json",
+    "test:e2e:high-priority": "node tests/auth-ui-e2e/run-task-10-ui.mjs .omo/evidence/high-priority-missing-services/task-10/ui.json",
     "test:e2e:supabase:deps": "node tests/supabase-e2e/verify-dependencies.mjs",
     "test:e2e:supabase:evidence": "node tests/supabase-e2e/verify-evidence.mjs",
     "staging:contract": "node --test tests/staging-contract/*.test.mjs && node tests/staging-contract/write-gate0-checklist.mjs --output .omo/evidence/staging/gate-0-provider-checklist.json && node tests/staging-contract/run-fake-command-tests.mjs --case forbidden-commands --expect reject && node tests/staging-contract/run-fake-command-tests.mjs --case invalid-contract --expect reject && node tests/staging-contract/run-fake-command-tests.mjs --case valid-contract --expect approve && node tests/staging-contract/run-redaction-tests.mjs --fixtures jwt,cookie,key,email,uuid,project-ref,url",
@@ -45,7 +53,8 @@
   "pnpm": {
     "overrides": {
       "sharp": "0.35.0",
-      "postcss": "8.5.18"
+      "postcss": "8.5.18",
+      "nanoid": "3.3.18"
     }
   },
   "devDependencies": {

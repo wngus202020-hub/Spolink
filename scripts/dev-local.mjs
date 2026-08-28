@@ -11,16 +11,14 @@ import {
   readGuardedLocalStatus,
 } from "./supabase-local/local-status.mjs"
 import { startNextDev } from "./supabase-local/next-dev.mjs"
-import {
-  assertStoppedState,
-  maybeReadRuntimeReceipt,
-  readRuntimeReceipt,
-} from "./supabase-local/receipt.mjs"
+import { maybeReadRuntimeReceipt, readRuntimeReceipt } from "./supabase-local/receipt.mjs"
+import { assertStoppedState } from "./supabase-local/stopped-state.mjs"
 import { absoluteEvidencePath } from "./supabase-local/utils.mjs"
 
 const HOST = "127.0.0.1"
 const PORT = 3000
 const APP_URL = `http://${HOST}:${PORT}`
+const primaryAggregateErrors = new WeakSet()
 
 export async function runLocalDev(options = {}) {
   const runtime = options.runtime ?? createRuntime(options)
@@ -71,6 +69,7 @@ export async function runLocalDev(options = {}) {
     await next.closed
   } catch (error) {
     primaryError = error
+    rememberPrimaryAggregate(error)
   } finally {
     if (next) await captureCleanup(cleanupErrors, () => next.stop(null))
     if (startedByLauncher) {
@@ -80,10 +79,12 @@ export async function runLocalDev(options = {}) {
   }
 
   if (primaryError && cleanupErrors.length > 0) {
-    throw new AggregateError(
+    const aggregate = new AggregateError(
       [primaryError, ...cleanupErrors],
       "Local dev startup and cleanup failed",
     )
+    primaryAggregateErrors.add(aggregate)
+    throw aggregate
   }
   if (primaryError) throw primaryError
   if (cleanupErrors.length > 0) throw new AggregateError(cleanupErrors, "Local dev cleanup failed")
@@ -149,10 +150,26 @@ async function main() {
   }
 }
 
-function errorCode(error) {
+export function errorCode(error) {
+  const primaryError = primaryAggregateMember(error)
+  if (primaryError) return `${plainErrorCode(primaryError)}_cleanup_failed`
+  return plainErrorCode(error)
+}
+
+function plainErrorCode(error) {
   if (error instanceof LocalDevError) return error.code
   if (error instanceof AggregateError) return "cleanup_failed"
   return "runtime_failed"
+}
+
+function rememberPrimaryAggregate(error) {
+  if (error instanceof AggregateError) primaryAggregateErrors.add(error)
+}
+
+function primaryAggregateMember(error) {
+  if (!(error instanceof AggregateError) || !primaryAggregateErrors.has(error)) return null
+  const [first] = error.errors
+  return primaryAggregateErrors.has(first) ? primaryAggregateMember(first) : first
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) await main()

@@ -1,0 +1,198 @@
+create temporary table draft_intent on commit drop as
+select * from public.create_lesson_image_upload_intent(
+  '84000000-0000-4000-8000-000000000001', 'image/jpeg', 5242880
+);
+select matches((select object_name from draft_intent),
+  '^84000000-0000-4000-8000-000000000001/[0-9a-f-]{36}\.jpg$',
+  'server creates canonical immutable path');
+select is((select status from draft_intent), 'pending', 'intent starts pending');
+select ok((select expires_at - created_at = interval '2 hours' from draft_intent),
+  'intent TTL is exactly two hours');
+reset role;
+select throws_ok(format(
+  'select public.register_validated_lesson_image(%L,%L,%L)',
+  '81000000-0000-4000-8000-000000000001',
+  (select id from draft_intent), (select object_name from draft_intent)
+), 'P0001', 'IMAGE_OBJECT_NOT_FOUND', 'registration requires provider object');
+reset role;
+select pg_temp.set_image_actor('81000000-0000-4000-8000-000000000001');
+set local role authenticated;
+
+create temporary table rejected_intent on commit drop as
+select * from public.create_lesson_image_upload_intent(
+  '84000000-0000-4000-8000-000000000002', 'image/webp', 1
+);
+select matches((select object_name from rejected_intent),
+  '^84000000-0000-4000-8000-000000000002/[0-9a-f-]{36}\.webp$',
+  'rejected owner lesson accepts WebP');
+
+create temporary table retry_intent on commit drop as
+select * from public.create_lesson_image_upload_intent(
+  '84000000-0000-4000-8000-000000000009', 'image/png', 8
+);
+reset role;
+insert into storage.objects (bucket_id, name, owner_id, metadata)
+values (
+  'lesson-images',
+  (select object_name from retry_intent),
+  '81000000-0000-4000-8000-000000000001',
+  '{"mimetype":"image/png","size":8}'::jsonb
+);
+select throws_ok(format(
+  'select public.register_validated_lesson_image(%L,%L,%L)',
+  '81000000-0000-4000-8000-000000000004',
+  (select id from retry_intent), (select object_name from retry_intent)
+), 'P0001', 'IMAGE_INTENT_NOT_FOUND', 'trusted nonowner actor cannot register owner intent');
+select throws_ok(format(
+  'select public.register_validated_lesson_image(%L,%L,%L)',
+  gen_random_uuid(), (select id from retry_intent), (select object_name from retry_intent)
+), 'P0001', 'COACH_NOT_APPROVED', 'trusted random actor is rejected');
+reset role;
+select pg_temp.set_image_actor('81000000-0000-4000-8000-000000000001');
+create temporary table first_registration on commit drop as
+select * from public.register_validated_lesson_image(
+  '81000000-0000-4000-8000-000000000001',
+  (select id from retry_intent), (select object_name from retry_intent)
+);
+create temporary table duplicate_registration on commit drop as
+select * from public.register_validated_lesson_image(
+  '81000000-0000-4000-8000-000000000001',
+  (select id from retry_intent), (select object_name from retry_intent)
+);
+select is((select id from duplicate_registration), (select id from first_registration),
+  'exact duplicate registration returns the original image');
+select is((select registered_image_id from public.lesson_image_upload_intents
+  where id = (select id from retry_intent)), (select id from first_registration),
+  'first registration atomically records durable image identity');
+select is((select count(*) from public.lesson_images
+  where lesson_id = '84000000-0000-4000-8000-000000000009'), 1::bigint,
+  'duplicate registration inserts exactly one image');
+select is((select array_agg(sort_order order by sort_order)::text from public.lesson_images
+  where lesson_id = '84000000-0000-4000-8000-000000000009'), '{0}',
+  'duplicate registration leaves dense order unchanged');
+select throws_ok(format(
+  'select public.register_validated_lesson_image(%L,%L,%L)',
+  '81000000-0000-4000-8000-000000000001',
+  (select id from retry_intent),
+  '84000000-0000-4000-8000-000000000009/89000000-0000-4000-8000-000000000009.png'
+), 'P0001', 'IMAGE_INTENT_NOT_FOUND', 'duplicate registration path pairing remains exact');
+reset role;
+select throws_ok(format(
+  'select public.register_validated_lesson_image(%L,%L,%L)',
+  '81000000-0000-4000-8000-000000000004',
+  (select id from retry_intent), (select object_name from retry_intent)
+), 'P0001', 'IMAGE_INTENT_NOT_FOUND', 'foreign owner cannot reuse a registered intent');
+reset role;
+update public.lesson_images set lifecycle_state = 'deleting'
+where id = (select id from first_registration);
+select throws_ok(format(
+  'select public.register_validated_lesson_image(%L,%L,%L)',
+  '81000000-0000-4000-8000-000000000001',
+  (select id from retry_intent), (select object_name from retry_intent)
+), 'P0001', 'IMAGE_INTENT_NOT_ACTIVE', 'deleting registered image is not a successful retry');
+reset role;
+delete from public.lesson_images where id = (select id from first_registration);
+select throws_ok(format(
+  'select public.register_validated_lesson_image(%L,%L,%L)',
+  '81000000-0000-4000-8000-000000000001',
+  (select id from retry_intent), (select object_name from retry_intent)
+), 'P0001', 'IMAGE_INTENT_NOT_ACTIVE', 'deleted registered image is not a successful retry');
+reset role;
+
+select pg_temp.set_image_actor('81000000-0000-4000-8000-000000000004');
+set local role authenticated;
+create temporary table foreign_intent on commit drop as
+select * from public.create_lesson_image_upload_intent(
+  '84000000-0000-4000-8000-000000000004', 'image/png', 10
+);
+reset role;
+
+select pg_temp.set_image_actor('81000000-0000-4000-8000-000000000001');
+set local role authenticated;
+select is((select status from public.cancel_lesson_image_upload_intent(
+  '84000000-0000-4000-8000-000000000001',
+  (select id from draft_intent),
+  (select object_name from draft_intent)
+)), 'cancelled', 'owner cancels a pending intent');
+select is((select status from public.cancel_lesson_image_upload_intent(
+  '84000000-0000-4000-8000-000000000001',
+  (select id from draft_intent),
+  (select object_name from draft_intent)
+)), 'cancelled', 'duplicate owner compensation is idempotent');
+select is((select count(*) from public.lesson_image_upload_intents
+  where lesson_id = '84000000-0000-4000-8000-000000000001' and status = 'pending'),
+  0::bigint, 'cleaned compensation frees pending image capacity');
+select throws_ok(format(
+  'select public.cancel_lesson_image_upload_intent(%L,%L,%L)',
+  '84000000-0000-4000-8000-000000000001',
+  (select id from rejected_intent),
+  (select object_name from rejected_intent) || '.spoof'
+), 'P0001', 'IMAGE_INTENT_NOT_FOUND', 'object pairing is exact');
+select throws_ok(format(
+  'select public.cancel_lesson_image_upload_intent(%L,%L,%L)',
+  '84000000-0000-4000-8000-000000000004',
+  (select id from foreign_intent),
+  (select object_name from foreign_intent)
+), 'P0001', 'LESSON_NOT_FOUND', 'owner cannot cancel a foreign lesson intent');
+reset role;
+select is((select status from public.lesson_image_upload_intents
+  where id = (select id from foreign_intent)), 'pending',
+  'foreign intent fixture remains pending after denied cancellation');
+
+insert into public.lesson_image_upload_intents (
+  id, lesson_id, coach_profile_id, user_id, object_name, mime_type, size_bytes
+) values (
+  '87000000-0000-4000-8000-000000000003',
+  '84000000-0000-4000-8000-000000000003',
+  '82000000-0000-4000-8000-000000000001',
+  '81000000-0000-4000-8000-000000000001',
+  '84000000-0000-4000-8000-000000000003/88000000-0000-4000-8000-000000000003.jpg',
+  'image/jpeg', 10
+);
+select pg_temp.set_image_actor('81000000-0000-4000-8000-000000000001');
+set local role authenticated;
+select throws_ok(
+  $$select public.cancel_lesson_image_upload_intent(
+    '84000000-0000-4000-8000-000000000003',
+    '87000000-0000-4000-8000-000000000003',
+    '84000000-0000-4000-8000-000000000003/88000000-0000-4000-8000-000000000003.jpg')$$,
+  'P0001', 'LESSON_STATE_CONFLICT', 'active lesson intent cannot be cancelled'
+);
+select is((select status from public.lesson_image_upload_intents
+  where id = '87000000-0000-4000-8000-000000000003'), 'pending',
+  'active lesson denial preserves pending intent');
+reset role;
+
+update public.lesson_image_upload_intents
+set status = 'claimed', claimed_at = statement_timestamp(), claim_token = gen_random_uuid()
+where id = (select id from rejected_intent);
+select pg_temp.set_image_actor('81000000-0000-4000-8000-000000000001');
+set local role authenticated;
+select throws_ok(format(
+  'select public.cancel_lesson_image_upload_intent(%L,%L,%L)',
+  '84000000-0000-4000-8000-000000000002',
+  (select id from rejected_intent),
+  (select object_name from rejected_intent)
+), 'P0001', 'IMAGE_INTENT_NOT_ACTIVE', 'claimed intent cannot be cancelled');
+select is((select status from public.lesson_image_upload_intents
+  where id = (select id from rejected_intent)), 'claimed',
+  'claimed denial preserves claim ownership');
+reset role;
+
+update public.lesson_image_upload_intents
+set status = 'registered', claimed_at = null, claim_token = null,
+    registered_image_id = '89000000-0000-4000-8000-000000000002',
+    completed_at = statement_timestamp()
+where id = (select id from rejected_intent);
+select pg_temp.set_image_actor('81000000-0000-4000-8000-000000000001');
+set local role authenticated;
+select throws_ok(format(
+  'select public.cancel_lesson_image_upload_intent(%L,%L,%L)',
+  '84000000-0000-4000-8000-000000000002',
+  (select id from rejected_intent),
+  (select object_name from rejected_intent)
+), 'P0001', 'IMAGE_INTENT_NOT_ACTIVE', 'registered intent cannot be cancelled');
+select is((select status from public.lesson_image_upload_intents
+  where id = (select id from rejected_intent)), 'registered',
+  'registered denial preserves completed intent');
+reset role;

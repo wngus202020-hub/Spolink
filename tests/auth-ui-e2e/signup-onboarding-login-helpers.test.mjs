@@ -22,20 +22,132 @@ const { testEmail, testPassword } = await import("./auth-form-helpers.ts")
 const { cleanupLiveAuthUser } = await import("./auth-recovery-helpers.ts")
 const {
   SignupCleanupError,
+  SignupOnboardingObservationError,
   SignupProfileAssertionError,
   assertPersistedSignupProfile,
   attachBrowserFailureCollector,
+  createOnboarding422RetryReceipt,
+  createRejectedRegionTextReceipt,
+  createSingleOnboardingSubmissionReceipt,
   createSignupJourneyFixture,
   runWithSignupCleanup,
 } = await import("./signup-onboarding-login-helpers.ts")
 
 const expectedProfile = Object.freeze({
-  defaultRegion: "서울 강남구",
+  defaultRegion: "서울특별시 강남구",
   displayName: "스포링커",
   locationAgreed: true,
   marketingAgreed: false,
   phone: "010-1234-5678",
   realName: "김스포츠",
+})
+
+test("onboarding observation contract accepts behavior-equivalent source refactors", () => {
+  const reads = []
+  const refactoredObservationSource = {
+    readPayloads() {
+      reads.push("payloads")
+      return [
+        {
+          realName: expectedProfile.realName,
+          phone: expectedProfile.phone,
+          marketingAgreed: expectedProfile.marketingAgreed,
+          locationAgreed: expectedProfile.locationAgreed,
+          displayName: expectedProfile.displayName,
+          defaultRegion: expectedProfile.defaultRegion,
+        },
+      ]
+    },
+    readExplicitRegionSelection() {
+      reads.push("selection")
+      return true
+    },
+  }
+
+  const receipt = createSingleOnboardingSubmissionReceipt(refactoredObservationSource)
+
+  assert.deepEqual(reads.sort(), ["payloads", "selection"])
+  assert.deepEqual(receipt, {
+    defaultRegion: expectedProfile.defaultRegion,
+    kind: "single-submission",
+    profileRequestCount: 1,
+    verdict: "APPROVE",
+  })
+})
+
+test("onboarding observation contract rejects free text or missing explicit selection", () => {
+  assert.throws(
+    () =>
+      createRejectedRegionTextReceipt({
+        profileRequestCount: 1,
+        searchText: "uncommitted-region-query",
+        selectedRegion: null,
+      }),
+    SignupOnboardingObservationError,
+  )
+  assert.throws(
+    () =>
+      createSingleOnboardingSubmissionReceipt({
+        readExplicitRegionSelection: () => false,
+        readPayloads: () => [expectedProfile],
+      }),
+    SignupOnboardingObservationError,
+  )
+})
+
+test("onboarding observation contract rejects duplicate profile submission", () => {
+  assert.throws(
+    () =>
+      createSingleOnboardingSubmissionReceipt({
+        readExplicitRegionSelection: () => true,
+        readPayloads: () => [expectedProfile, expectedProfile],
+      }),
+    SignupOnboardingObservationError,
+  )
+})
+
+test("onboarding observation contract rejects lost 422 retention", () => {
+  assert.throws(
+    () =>
+      createOnboarding422RetryReceipt({
+        firstPayload: { ...expectedProfile, marketingAgreed: true },
+        persistedDefaultRegion: expectedProfile.defaultRegion,
+        requestCount: 2,
+        retained: {
+          consents: true,
+          identityFields: true,
+          purpose: true,
+          regionSelection: false,
+        },
+        secondPayload: { ...expectedProfile, marketingAgreed: true },
+      }),
+    SignupOnboardingObservationError,
+  )
+})
+
+test("onboarding observation contract rejects noncanonical payload or persistence", () => {
+  const canonical = { ...expectedProfile, marketingAgreed: true }
+  for (const observation of [
+    {
+      firstPayload: { ...canonical, defaultRegion: "서울 강남구" },
+      persistedDefaultRegion: expectedProfile.defaultRegion,
+      requestCount: 2,
+      retained: { consents: true, identityFields: true, purpose: true, regionSelection: true },
+      secondPayload: { ...canonical, defaultRegion: "서울 강남구" },
+    },
+    {
+      firstPayload: canonical,
+      persistedDefaultRegion: "서울 강남구",
+      requestCount: 2,
+      retained: { consents: true, identityFields: true, purpose: true, regionSelection: true },
+      secondPayload: canonical,
+    },
+  ]) {
+    assert.throws(
+      () => createOnboarding422RetryReceipt(observation),
+      SignupOnboardingObservationError,
+    )
+  }
 })
 
 function matchingProbe() {

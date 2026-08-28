@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server"
 
+import { lessonAuthoringRouteDependencies } from "@/lib/lessons/authoring-default-dependencies"
+import { createUpdateLessonRouteHandler } from "@/lib/lessons/authoring-route-handlers"
 import { getActiveLessonByIdForDisplay } from "@/lib/lessons/display-lessons"
 import { buildLessonDetailResponse } from "@/lib/lessons/public-lesson-api"
 
@@ -19,3 +21,5 @@ export async function GET(_request: Request, { params }: LessonDetailRouteContex
 
   return NextResponse.json(buildLessonDetailResponse(lesson))
 }
+
+export const PATCH = createUpdateLessonRouteHandler(lessonAuthoringRouteDependencies)

@@ -20,6 +20,7 @@ export type LessonReview = Readonly<{
 
 export type LessonMedia = Readonly<
   | {
+      images?: readonly LessonMediaImage[]
       kind: "photo"
       src: string
     }
@@ -27,6 +28,11 @@ export type LessonMedia = Readonly<
       kind: "missing"
     }
 >
+
+export type LessonMediaImage = Readonly<{
+  sortOrder: number
+  url: string
+}>
 
 export type Lesson = Readonly<{
   id: string

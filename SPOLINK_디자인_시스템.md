@@ -655,7 +655,8 @@ Usage:
 현재 구현 미디어 경계:
 
 - 카드와 상세는 `photo | missing`을 명시적으로 표현한다. `photo`의 로드 오류는 neutral `missing` 표시로 한 번만 전환한다.
-- 공개 찜 추가·삭제 mutation은 보류 상태다. My Page의 기존 찜 read 모델을 보존하되 공개 카드에 비활성 찜 버튼을 남기지 않는다.
+- 공개 찜 추가·삭제 mutation은 인증된 학습자의 활성 레슨에 대해 구현되어 있다. 비로그인
+  사용자는 로그인 유도로 안내하고, My Page의 찜 read model은 mutation 뒤 재검증한다.
 
 Rules:
 
@@ -767,6 +768,33 @@ Rules:
   충돌 상태마다 상태 제목과 다음 행동을 제공한다.
 - 1280×800, 768×1024, 390×844에서 44px 이상 터치 타깃, 자연스러운 한국어 줄바꿈,
   키보드 순서와 오류 초점을 유지한다.
+
+### 5.22 Lesson Image Manager
+
+Usage:
+
+- `/coach/lessons/new`, `/coach/lessons/[lessonId]/edit`
+- 공개 레슨 카드와 `/lessons/[lessonId]` gallery
+
+Structure:
+
+- 최대 5개의 안정된 비율 preview, 첫 항목의 `표지` 배지, 순서 이동 icon button
+- 파일별 queued/uploading/failed/registered/deleting 상태와 progress live region
+- 실패 항목의 `이미지만 다시 시도`, destructive 삭제 확인 dialog
+
+Rules:
+
+- JPEG/PNG/WebP, 파일당 5 MiB 이하를 입력 가까이에서 검증하고 6번째 선택을 거절한다.
+- 선택 순서와 서버 `sortOrder 0..n-1`를 일치시키며 0번만 표지로 표시한다.
+- 업로드는 직렬 처리하고 중간 실패 뒤 성공 preview와 실패/남은 `File`을 유지한다. 재시도 중
+  등록 완료 항목을 중복 업로드하거나 페이지 refresh로 로컬 preview를 잃지 않는다.
+- `draft|rejected` 외 상태와 active intent/deleting 중에는 mutation을 실제 `disabled`로 막는다.
+- reorder는 키보드로 가능해야 하며 삭제 dialog 종료 뒤 해당 항목 또는 합리적인 인접 항목으로
+  초점을 복원한다. 오류는 파일 입력/항목과 연결하고 live region으로 진행을 알린다.
+- preview/gallery는 responsive 고정 비율로 잡아 상태 라벨, 로딩, 대체 이미지가 layout shift나
+  가로 overflow를 만들지 않게 한다. 모든 조작 target은 44px 이상이다.
+- public bucket의 알려진 URL 회수 여부를 UI 성공 상태로 추정하지 않는다. 화면 성공은 ready
+  DB/API 제외와 멱등 삭제 영수증을 기준으로 한다.
 
 ## 6. Motion & Interaction
 
@@ -906,7 +934,10 @@ Rules:
 | Motion | CSS transitions first, Motion only when state transition needs it |
 | Theme | CSS variables with light and dark values |
 
-로컬 Supabase/Auth/RLS/cancellation 경계만 구현되어 있다. hosted Supabase, actual Toss refund, maps, chat, push, coach upload/submission, public favorite mutation은 deferred이며 완료된 UI나 provider 연동으로 표기하지 않는다.
+로컬 Supabase/Auth/RLS와 lesson/reservation/review/trust-safety/notification 및 내부
+refund/settlement 상태 경계가 구현되어 있다. 지도자 인증 신청·private certificate
+upload/submission/review도 구현되어 있다. hosted Supabase, actual Toss refund execution,
+payout network, maps, chat, push는 deferred이며 완료된 UI나 provider 연동으로 표기하지 않는다.
 
 ### Tailwind Mapping
 

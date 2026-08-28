@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { type FormEvent, useEffect, useRef, useState } from "react"
 import { useHydrated } from "@/components/auth/auth-client-routes"
 import { AuthAlert, AuthTextField } from "@/components/auth/auth-fields"
+import { ProfileRegionPicker } from "@/components/profile/profile-region-picker"
 import { Button } from "@/components/ui/button"
 
 type FieldName = "defaultRegion" | "displayName" | "phone" | "realName"
@@ -25,6 +26,7 @@ export function ProfileOnboardingForm() {
     realName: useRef<HTMLInputElement>(null),
   }
   const [errors, setErrors] = useState<FieldErrors>({})
+  const [defaultRegion, setDefaultRegion] = useState<string | null>(null)
   const [intent, setIntent] = useState<OnboardingIntent>("learner")
   const [submitting, setSubmitting] = useState(false)
 
@@ -38,7 +40,7 @@ export function ProfileOnboardingForm() {
 
     const form = new FormData(event.currentTarget)
     const request = {
-      defaultRegion: String(form.get("defaultRegion") ?? "").trim(),
+      defaultRegion: defaultRegion,
       displayName: String(form.get("displayName") ?? "").trim(),
       locationAgreed: form.get("locationAgreed") === "on",
       marketingAgreed: form.get("marketingAgreed") === "on",
@@ -97,6 +99,11 @@ export function ProfileOnboardingForm() {
     }
   }
 
+  function updateRegion(value: string) {
+    setDefaultRegion(value)
+    setErrors(({ defaultRegion: _defaultRegion, ...remaining }) => remaining)
+  }
+
   return (
     <form className="grid gap-5" method="post" noValidate onSubmit={submitProfile}>
       {errors.form ? (
@@ -148,18 +155,35 @@ export function ProfileOnboardingForm() {
             name="phone"
             required
           />
-          <AuthTextField
-            error={errors.defaultRegion}
-            helperText="가까운 레슨을 찾는 데 사용하는 시·군·구예요."
-            id="profile-region"
-            inputRef={refs.defaultRegion}
-            label="기본 활동 지역 (필수)"
-            maxLength={80}
-            name="defaultRegion"
-            required
-          />
         </div>
       </div>
+
+      <section aria-labelledby="profile-onboarding-region-heading" className="grid gap-3">
+        <div className="grid gap-1" id="profile-onboarding-region-focus">
+          <h2 className="m-0 text-lg font-bold text-primary" id="profile-onboarding-region-heading">
+            기본 활동 지역 (필수)
+          </h2>
+          <p className="m-0 text-sm text-secondary">
+            가까운 레슨을 찾는 데 사용할 공식 지역을 선택해요.
+          </p>
+        </div>
+        <ProfileRegionPicker
+          describedBy={errors.defaultRegion ? "profile-onboarding-region-error" : undefined}
+          disabled={submitting}
+          inputRef={refs.defaultRegion}
+          invalid={Boolean(errors.defaultRegion)}
+          onChange={updateRegion}
+          value={defaultRegion}
+        />
+        {errors.defaultRegion ? (
+          <p
+            className="m-0 text-sm text-[color:var(--status-error)]"
+            id="profile-onboarding-region-error"
+          >
+            {errors.defaultRegion}
+          </p>
+        ) : null}
+      </section>
 
       <fieldset className="grid gap-3 border-t border-line pt-5">
         <legend className="pr-3 text-base font-bold text-primary">이용 목적</legend>
@@ -253,18 +277,23 @@ function Consent({ children, name }: Readonly<{ children: string; name: string }
 }
 
 function validateProfile(
-  value: Readonly<{ defaultRegion: string; displayName: string; phone: string; realName: string }>,
+  value: Readonly<{
+    defaultRegion: string | null
+    displayName: string
+    phone: string
+    realName: string
+  }>,
 ): FieldErrors {
   const errors: FieldErrors = {}
   if (value.displayName.length < 2) errors.displayName = "활동 이름은 2자 이상 입력하면 돼요."
   if (value.realName.length < 2) errors.realName = "실명은 2자 이상 입력하면 돼요."
   if (!phonePattern.test(value.phone)) errors.phone = "올바른 휴대폰 번호를 입력해요."
-  if (value.defaultRegion.length < 2) errors.defaultRegion = "활동 지역은 2자 이상 입력하면 돼요."
+  if (value.defaultRegion === null) errors.defaultRegion = "기본 활동 지역을 선택해 주세요."
   return errors
 }
 
 function focusFirstInvalid(
-  refs: Record<FieldName, { current: HTMLInputElement | null }>,
+  refs: Record<FieldName, { current: HTMLElement | null }>,
   errors: FieldErrors,
 ) {
   for (const name of ["displayName", "realName", "phone", "defaultRegion"] as const) {

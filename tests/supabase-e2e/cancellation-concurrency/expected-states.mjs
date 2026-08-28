@@ -1,13 +1,13 @@
 import { providerEvidence } from "./slots.mjs"
 import { assertRaceStateSnapshot } from "./state.mjs"
 
-export function assertCancelledState(state, slot, reason) {
-  assertRaceStateSnapshot(state, expectedCancelledState(slot, reason))
+export function assertCancelledState(state, { authIds, reason, slot }) {
+  assertRaceStateSnapshot(state, expectedCancelledState(slot, reason, authIds))
 }
 
-export function assertConfirmedThenCancelledState(state, slot, reason) {
+export function assertConfirmedThenCancelledState(state, { authIds, reason, slot }) {
   assertRaceStateSnapshot(state, {
-    ...expectedCancelledState(slot, reason),
+    ...expectedCancelledState(slot, reason, authIds),
     audits: [
       confirmedAudit(slot),
       {
@@ -19,8 +19,8 @@ export function assertConfirmedThenCancelledState(state, slot, reason) {
       },
     ],
     notifications: [
-      { status: "cancelled_by_user", type: "reservation_cancelled" },
-      { status: null, type: "reservation_confirmed" },
+      { status: "cancelled_by_user", type: "reservation_cancelled", user_id: authIds.coach },
+      { status: null, type: "reservation_confirmed", user_id: authIds.learner },
     ],
     payment: {
       ...expectedPaidPayment(slot),
@@ -30,9 +30,9 @@ export function assertConfirmedThenCancelledState(state, slot, reason) {
   })
 }
 
-export function assertReconciledCancellationState(state, slot, reason) {
+export function assertReconciledCancellationState(state, { authIds, reason, slot }) {
   assertRaceStateSnapshot(state, {
-    ...expectedCancelledState(slot, reason),
+    ...expectedCancelledState(slot, reason, authIds),
     audits: [
       {
         action: "payment.confirmation_reconciliation_required",
@@ -64,11 +64,14 @@ export function assertReconciledCancellationState(state, slot, reason) {
         status: "requested",
       },
     ],
-    reservation: { ...expectedCancelledState(slot, reason).reservation, confirmed: false },
+    reservation: {
+      ...expectedCancelledState(slot, reason, authIds).reservation,
+      confirmed: false,
+    },
   })
 }
 
-function expectedCancelledState(slot, reason) {
+function expectedCancelledState(slot, reason, authIds) {
   return {
     audits: [
       {
@@ -79,7 +82,9 @@ function expectedCancelledState(slot, reason) {
         target_type: "reservation",
       },
     ],
-    notifications: [{ status: "cancelled_by_user", type: "reservation_cancelled" }],
+    notifications: [
+      { status: "cancelled_by_user", type: "reservation_cancelled", user_id: authIds.coach },
+    ],
     payment: expectedPaidPayment(slot),
     refunds: [{ amount: 7000, reason, source: "reservation_cancellation", status: "requested" }],
     reservation: {

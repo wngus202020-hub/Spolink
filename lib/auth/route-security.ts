@@ -38,14 +38,30 @@ export function hasSameOrigin(request: Request): boolean {
   try {
     const originUrl = new URL(origin)
     const requestUrl = new URL(request.url)
+    if (origin !== originUrl.origin) return false
     if (originUrl.origin === requestUrl.origin) return true
 
-    const host = request.headers.get("host")
-    return host !== null && originUrl.origin === new URL(`${requestUrl.protocol}//${host}`).origin
+    return (
+      isLoopback(originUrl.hostname) &&
+      isLoopback(requestUrl.hostname) &&
+      originUrl.protocol === requestUrl.protocol &&
+      effectivePort(originUrl) === effectivePort(requestUrl)
+    )
   } catch (error) {
     if (error instanceof TypeError) return false
     throw error
   }
+}
+
+function isLoopback(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]"
+}
+
+function effectivePort(url: URL): string | null {
+  if (url.port) return url.port
+  if (url.protocol === "http:") return "80"
+  if (url.protocol === "https:") return "443"
+  return null
 }
 
 export function hasJsonContentType(request: Request): boolean {

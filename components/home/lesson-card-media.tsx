@@ -26,6 +26,7 @@ export function LessonCardMedia({
   const [visibleMedia, setVisibleMedia] = useState(media)
   const radiusClassName =
     surface === "detail" ? "rounded-[var(--radius-xl)]" : "rounded-[var(--radius-lg)]"
+  const aspectClassName = surface === "detail" ? "aspect-[4/3] lg:aspect-[16/9]" : "aspect-[4/3]"
 
   const handleLoadError = () => {
     if (hasHandledLoadError.current) return
@@ -38,7 +39,7 @@ export function LessonCardMedia({
     case "photo":
       return (
         <div
-          className={`relative aspect-[4/3] overflow-hidden ${radiusClassName} bg-inset`}
+          className={`relative overflow-hidden ${aspectClassName} ${radiusClassName} bg-inset`}
           data-lesson-media-state="photo"
         >
           <Image
@@ -58,7 +59,7 @@ export function LessonCardMedia({
       return (
         <div
           aria-label={missingLabel}
-          className={`grid aspect-[4/3] place-items-center overflow-hidden ${radiusClassName} bg-inset px-6 text-center text-sm font-bold text-secondary`}
+          className={`grid place-items-center overflow-hidden ${aspectClassName} ${radiusClassName} bg-inset px-6 text-center text-sm font-bold text-secondary`}
           data-lesson-media-state="missing"
           role="img"
         >

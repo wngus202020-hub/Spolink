@@ -1,0 +1,54 @@
+select is(
+  (select concat_ws('|', id, public::text, file_size_limit::text)
+   from storage.buckets where id = 'lesson-images'),
+  'lesson-images|true|5242880', 'lesson image bucket is public and five MiB'
+);
+select is(
+  (select array_agg(mime order by mime)::text
+   from storage.buckets cross join unnest(allowed_mime_types) mime
+   where id = 'lesson-images'),
+  '{image/jpeg,image/png,image/webp}', 'bucket MIME allowlist is exact'
+);
+select is(
+  (select file_size_limit from storage.buckets where id = 'coach-certificates'),
+  10485760::bigint, 'coach certificate bucket remains ten MiB'
+);
+select has_table('public', 'lesson_image_upload_intents', 'upload intents are durable');
+select has_column('public', 'lesson_image_upload_intents', 'registered_image_id',
+  'registered intents retain the created image identity');
+select has_table('public', 'lesson_image_deletion_receipts',
+  'deletion retries have durable private receipts');
+select has_column('public', 'lesson_images', 'lifecycle_state', 'images have lifecycle state');
+select ok(
+  exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.lesson_images'::regclass and contype = 'u' and condeferrable
+      and pg_get_constraintdef(oid) like 'UNIQUE (lesson_id, sort_order)%'
+  ), 'sort uniqueness is deferrable'
+);
+select ok(
+  exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.lesson_images'::regclass and contype = 'u'
+      and pg_get_constraintdef(oid) = 'UNIQUE (file_path)'
+  ), 'file path is unique'
+);
+
+select has_function('public', 'create_lesson_image_upload_intent',
+  array['uuid', 'text', 'bigint'], 'create intent RPC exists');
+select has_function('public', 'cancel_lesson_image_upload_intent',
+  array['uuid', 'uuid', 'text'], 'owned intent cancellation RPC exists');
+select hasnt_function('public', 'register_lesson_image',
+  array['uuid', 'text'], 'browser-callable register RPC signature is removed');
+select has_function('public', 'register_validated_lesson_image',
+  array['uuid', 'uuid', 'text'], 'server-only register RPC exists');
+select has_function('public', 'reorder_lesson_images',
+  array['uuid', 'uuid[]', 'uuid[]'], 'CAS reorder RPC exists');
+select has_function('public', 'begin_delete_lesson_image',
+  array['uuid', 'uuid', 'uuid[]'], 'begin delete RPC exists');
+select has_function('public', 'finalize_delete_lesson_image',
+  array['uuid', 'uuid'], 'finalize delete RPC exists');
+select has_function('public', 'claim_expired_lesson_image_upload_intents',
+  array['integer'], 'cleanup claim RPC exists');
+select has_function('public', 'finalize_lesson_image_upload_intent_cleanup',
+  array['uuid', 'uuid', 'boolean'], 'cleanup finalize RPC exists');

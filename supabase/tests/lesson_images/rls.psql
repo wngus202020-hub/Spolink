@@ -1,0 +1,58 @@
+select pg_temp.set_image_actor('81000000-0000-4000-8000-000000000003');
+set local role authenticated;
+select throws_ok(
+  $$select public.create_lesson_image_upload_intent(
+    '84000000-0000-4000-8000-000000000001','image/jpeg',100)$$,
+  'P0001', 'COACH_NOT_APPROVED', 'learner is rejected'
+);
+reset role;
+
+select pg_temp.set_image_actor('81000000-0000-4000-8000-000000000002');
+set local role authenticated;
+select throws_ok(
+  $$select public.create_lesson_image_upload_intent(
+    '84000000-0000-4000-8000-000000000001','image/jpeg',100)$$,
+  'P0001', 'COACH_NOT_APPROVED', 'unapproved coach is rejected'
+);
+reset role;
+
+select pg_temp.set_image_actor('81000000-0000-4000-8000-000000000004');
+set local role authenticated;
+select throws_ok(
+  $$select public.create_lesson_image_upload_intent(
+    '84000000-0000-4000-8000-000000000001','image/jpeg',100)$$,
+  'P0001', 'LESSON_NOT_FOUND', 'foreign approved coach is rejected'
+);
+reset role;
+
+select pg_temp.set_image_actor('81000000-0000-4000-8000-000000000005');
+set local role authenticated;
+select throws_ok(
+  $$select public.create_lesson_image_upload_intent(
+    '84000000-0000-4000-8000-000000000001','image/jpeg',100)$$,
+  'P0001', 'COACH_NOT_APPROVED', 'admin cannot impersonate owner'
+);
+reset role;
+
+select pg_temp.set_image_actor('81000000-0000-4000-8000-000000000001');
+set local role authenticated;
+select throws_ok(
+  $$select public.create_lesson_image_upload_intent(
+    '84000000-0000-4000-8000-000000000003','image/jpeg',100)$$,
+  'P0001', 'LESSON_STATE_CONFLICT', 'active lesson is noneditable'
+);
+select throws_ok(
+  $$select public.create_lesson_image_upload_intent(
+    '84000000-0000-4000-8000-000000000001','image/gif',100)$$,
+  'P0001', 'UNSUPPORTED_IMAGE_TYPE', 'invalid MIME is rejected'
+);
+select throws_ok(
+  $$select public.create_lesson_image_upload_intent(
+    '84000000-0000-4000-8000-000000000001','image/jpeg',0)$$,
+  'P0001', 'VALIDATION_ERROR', 'zero size is rejected'
+);
+select throws_ok(
+  $$select public.create_lesson_image_upload_intent(
+    '84000000-0000-4000-8000-000000000001','image/jpeg',5242881)$$,
+  'P0001', 'VALIDATION_ERROR', 'oversize is rejected'
+);

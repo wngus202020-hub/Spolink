@@ -18,8 +18,8 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 
 - 공개 탐색: `/`, `/lessons`, `/lessons/[lessonId]`, `/lessons/[lessonId]/booking`, `/reservations/[reservationId]/payment`.
 - 계정·온보딩: `/auth/login`, `/auth/signup`, `/auth/check-email`, `/auth/reset-password`, `/auth/update-password`, `/onboarding/profile`.
-- 로그인 사용자: `/coach/apply`, `/mypage`, `/mypage/reservations`, `/mypage/reservations/[reservationId]`, `/mypage/favorites`.
-- 이 경로들은 현재 동작하는 화면이다. `/coach/apply`는 인증 신청 임시 저장, private `coach-certificates` 자격증 파일 업로드·등록·삭제, 심사 제출을 제공한다. 공개 찜 추가·삭제 mutation은 아직 구현하지 않았으며, 해당 UI를 완료된 기능으로 안내하지 않는다.
+- 로그인 사용자: `/coach/apply`, `/mypage`, `/mypage/reservations`, `/mypage/reservations/[reservationId]`, `/mypage/favorites`, `/reservations/[reservationId]/complete`.
+- 이 경로들은 현재 동작하는 화면이다. `/coach/apply`는 인증 신청 임시 저장, private `coach-certificates` 자격증 파일 업로드·등록·삭제, 심사 제출을 제공한다. 레슨 상세와 `/mypage/favorites`의 찜 mutation도 인증된 학습자 소유 범위에서 동작한다.
 
 ### 탐색, 검색, 미디어
 
@@ -33,7 +33,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 ### 인증 실패 복구와 보류 항목
 
 - 비밀번호 재설정은 network, abort, non-2xx 실패 뒤 이메일 입력값을 유지하고 submit을 복구해 재시도할 수 있게 하며 generic alert에 focus한다. 회원가입 provider-error는 React 오류 상태 반영 뒤 첫 invalid field에 focus한다.
-- 현재 확인된 서버 상태는 local-only Supabase/Auth/RLS/cancellation과 지도자 인증 신청·private `coach-certificates` Storage·관리자 심사 구현 및 그 E2E다. hosted Supabase, actual Toss refund, maps, chat, push, public favorite mutation은 deferred다.
+- 현재 확인된 서버 상태는 local-only Supabase/Auth/RLS, 지도자 인증 신청·private `coach-certificates` Storage·관리자 심사, 레슨/예약 lifecycle, 찜·리뷰·신고·차단·앱 내 알림, 내부 환불 reconciliation·정산 상태와 그 계약/E2E다. hosted Supabase, actual Toss refund execution, payout network, maps, chat, push는 deferred다.
 
 ## UX 원칙
 
@@ -250,7 +250,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 
 ## 2. 로그인
 
-후보 경로:
+구현 경로:
 
 ```text
 /auth/login
@@ -361,6 +361,8 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 
 - `/onboarding/profile`은 프로필 필드의 소유 화면이며, 프로필이 없는 인증 사용자는 예약/결제 진입 전에 반드시 이 화면을 완료한다.
 - 이 화면은 프로필이 없는 신규 사용자의 생성 전용 화면이다. 기존 프로필 수정은 별도 마이페이지 프로필 수정 화면에서 `PATCH /api/profiles/me`로 처리한다.
+- 기본 활동 지역은 `ProfileRegionPicker`에서 검색 후 canonical 지역을 명시적으로 선택한다. 입력한 free text 자체를 저장하거나 POST하지 않는다.
+- 선택 전에는 `POST /api/profiles`를 보내지 않으며, 필수 지역 오류와 지역 선택 control의 focus로 다시 선택하게 한다.
 - 학습자/지도자 목적 선택은 다음 이동 경로를 정하는 UI 상태일 뿐이며 `role`, `status`, 지도자 승인 상태 같은 권한 값으로 저장하지 않는다.
 - 관심 종목 영구 저장은 MVP 범위에서 연기하며 이 화면의 필수 저장 계약에 포함하지 않는다.
 
@@ -651,7 +653,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 
 ## 11. 예약 완료
 
-후보 경로:
+구현 경로:
 
 ```text
 /reservations/[reservationId]/complete
@@ -659,7 +661,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 
 목적:
 
-- 결제 검증 후 예약 확정 상태를 보여준다.
+- 서버가 읽은 `reservation.status` = `confirmed` 및 `payment.status` = `paid`를 동시에 만족한 본인 예약만 예약 확정 화면으로 보여준다.
 
 주요 콘텐츠:
 
@@ -667,7 +669,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - 레슨명
 - 일정
 - 장소
-- 지도자 연락 또는 안내
+- 지도자 이름과 수업 안내
 - 취소/환불 진입
 - 마이페이지 이동
 
@@ -677,9 +679,19 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - 캘린더 등록
 - 레슨 더 보기
 
-연결 API:
+서버 읽기와 상태 이동:
 
-- `GET /api/reservations/{reservationId}`
+- 이 페이지는 Server Component에서 학습자 소유 읽기 모델을 사용한다. 일반 `GET /api/reservations/{reservationId}`는 현재 미구현이며 호출하지 않는다.
+- `not_found`: 존재하지 않거나 본인 소유가 아닌 예약은 동일한 404로 끝낸다.
+- `pending`: 유효한 결제 대기 예약은 `/reservations/[reservationId]/payment`로 이동한다.
+- `terminal`: 완료·취소·노쇼·분쟁 예약은 `/mypage/reservations/[reservationId]`로 이동한다.
+- `mismatch`, `read_failure`: 예약 완료를 주장하지 않는 비식별 복구 화면에서 다시 시도와 내 예약 이동을 제공한다.
+
+캘린더와 동작 경계:
+
+- `GET /api/reservations/{reservationId}/calendar`는 인증된 본인의 예약 소유권을 재확인하고 strict `confirmed` + `paid` 검증 후에만 캘린더 파일을 반환한다. 응답은 `private, no-store`이며 개인식별정보를 반환하지 않는다.
+- 예약 상세 보기와 취소·환불 안내는 기존 상세 화면으로 이동하며, 마이페이지와 레슨 더 보기 동선을 함께 제공한다.
+- `POST /api/reservations/{reservationId}/complete`는 지도자·관리자 수업 완료 처리를 위한 별도 API이며, 이 학습자 화면과 캘린더 요청에서는 호출하지 않는다.
 
 ## 12. 마이페이지 홈
 
@@ -715,7 +727,68 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - `GET /api/reservations`
 - `GET /api/notifications`
 
-## 13. 내 예약 목록
+## 13. 마이페이지 프로필 수정
+
+후보 경로:
+
+```text
+/mypage/profile
+```
+
+목적:
+
+- 인증된 사용자가 기존 프로필을 확인하고, 현재 구현된 6개 편집 필드만 수정한다.
+- 성공 후 사용자를 같은 `/mypage/profile` 화면에 유지하고 새로고침 후에도 저장값이 유지되는지 확인한다.
+
+필드와 제약:
+
+- 활동 이름 `displayName`: 필수, 앞뒤 공백 제거 후 2-30자.
+- 실명 `realName`: 필수, 앞뒤 공백 제거 후 2-50자.
+- 휴대폰 번호 `phone`: 필수, `010-1234-5678` 형식의 국내 휴대폰 번호.
+- 기본 활동 지역 `defaultRegion`: 필수, `lessonRegions`의 시·도 또는 시·군·구 canonical `queryValue`만 허용한다.
+- 위치 이용 동의 `locationAgreed`: 선택 동의 checkbox.
+- 마케팅 수신 동의 `marketingAgreed`: 선택 동의 checkbox.
+
+지역 검색과 legacy 복구:
+
+- 지역 선택은 프로필 소유 `ProfileRegionPicker`가 담당하며 `searchRegionOptions()`로 시·도/시·군·구를 검색한다.
+- 레슨 검색의 `전체` 선택지나 URL 필터 상태를 가져오지 않고, 입력한 free text 자체를 저장하지 않는다.
+- 기존 row의 지역이 `null`이거나 catalog에 없는 legacy 값이면 자동 수정하지 않고 `지역을 다시 선택해 주세요`를 표시한다.
+- legacy 상태에서는 사용자가 canonical 지역을 명시적으로 다시 선택해야 저장할 수 있다.
+
+접근과 redirect:
+
+- `readPageAuthProfile()`을 서버에서 1회 호출한다.
+- 미인증 또는 Supabase 미설정 상태는 `/auth/login?next=/mypage/profile`로 이동한다.
+- 프로필이 없는 인증 사용자는 `/onboarding/profile`로 이동한다.
+- 정지 계정은 `/auth/restricted?reason=account-suspended`, 삭제 계정은 `/auth/restricted?reason=account-deleted`로 이동한다.
+
+상태와 저장 흐름:
+
+- `loading.tsx`는 프로필 편집 shell 크기의 skeleton을 보여 주고, `error.tsx`는 `reset`으로 다시 시도하는 한국어 복구 UI를 제공한다.
+- 저장 버튼은 변경 없음, 변경값 invalid, 저장 중 상태에서 native `disabled`로 비활성화한다. Enter/requestSubmit 등으로 submit handler가 호출되어도 클라이언트 검증이 네트워크 mutation을 보내지 않고 첫 invalid field에 focus와 오류 안내를 제공한다.
+- duplicate submit은 1회 요청으로 제한한다.
+- 성공하면 `프로필 정보를 저장했어요.`를 `role="status"`로 알리고, baseline을 응답값으로 바꾼 뒤 `router.refresh()`를 호출한다.
+- 성공 후 경로는 `/mypage/profile`에 머무르며 reload 후 저장값이 유지된다. 실패 시 입력값을 유지하고 재시도한다.
+
+연결 API:
+
+- `PATCH /api/profiles/me`
+- 브라우저 mutation은 변경된 항목만 보낸다. 허용 key는 `displayName`, `realName`, `phone`, `defaultRegion`, `locationAgreed`, `marketingAgreed` 6개뿐이다.
+- 초기값은 Server Component가 전달하며 중복 프로필 조회를 만들지 않는다.
+
+검증된 실행 표면:
+
+- 명령: `corepack pnpm test:e2e:profile-edit`
+- Todo7 관찰 기준: `desktop-chromium`, `tablet-chromium`, `mobile-chromium` 3개 프로젝트에서 총 9개 테스트 통과.
+- 시각 증거: 성공 desktop/tablet/mobile 3장, 모바일 validation 1장, legacy desktop/tablet/mobile 3장을 포함한 정확한 7개 PNG 스크린샷. legacy는 각각 `null`, `서울 강남구`, prompt-injection 기존값을 안전한 재선택 상태로 보여 준다.
+
+제외/미구현:
+
+- 아바타/이미지 업로드, 계정 삭제, PASS 본인 인증, Hosted Supabase/provider integration, null clearing은 이 화면에서 제외/미구현이다.
+- API가 nullable 필드를 지원하더라도 현재 UI는 필수 텍스트와 canonical 지역을 비워서 저장하는 흐름을 제공하지 않는다.
+
+## 14. 내 예약 목록
 
 후보 경로:
 
@@ -749,7 +822,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 
 - `GET /api/reservations?role=learner`
 
-## 14. 예약 상세
+## 15. 예약 상세
 
 후보 경로:
 
@@ -781,7 +854,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 
 연결 API:
 
-- `GET /api/reservations/{reservationId}`
+- Server Component 학습자 소유 읽기 모델 (일반 `GET /api/reservations/{reservationId}`는 현재 미구현)
 - `POST /api/reservations/{reservationId}/cancel`
 - `POST /api/refunds`
 - `POST /api/reports`
@@ -800,7 +873,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 | no_show_coach | 환불 상태 보기, 신고 |
 | disputed | 처리 상태 보기 |
 
-## 15. 리뷰 작성
+## 16. 리뷰 작성
 
 후보 경로:
 
@@ -834,7 +907,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - `completed` 예약만 작성 가능
 - 예약당 1개만 작성 가능
 
-## 16. 지도자 대시보드
+## 17. 지도자 대시보드
 
 후보 경로:
 
@@ -877,7 +950,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - 반려됨
 - 활동 제한
 
-## 17. 지도자 레슨 목록
+## 18. 지도자 레슨 목록
 
 후보 경로:
 
@@ -910,7 +983,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - `GET /api/lessons` with coach scope
 - `POST /api/lessons/{lessonId}/status`
 
-## 18. 레슨 등록/수정
+## 19. 레슨 등록/수정
 
 후보 경로:
 
@@ -943,15 +1016,39 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - 임시 저장
 - 검토 요청
 - 수정 저장
+- 이미지 추가/다시 시도
+- 표지 지정과 순서 변경
+- 이미지 삭제 확인
 
 연결 API:
 
 - `GET /api/sports`
 - `POST /api/lessons`
 - `PATCH /api/lessons/{lessonId}`
-- `POST /api/storage/signed-upload-url`
+- `POST /api/lessons/{lessonId}/images/upload-intents`
+- `POST /api/lessons/{lessonId}/images`
+- `PATCH /api/lessons/{lessonId}/images/order`
+- `DELETE /api/lessons/{lessonId}/images/{imageId}`
 
-## 19. 일정 관리
+이미지 상태와 복구:
+
+- JPEG/PNG/WebP를 한 장당 5 MiB 이하, 레슨당 최대 5장 선택하며 첫 순서(`0`)를 표지로 표시한다.
+- 새 레슨은 텍스트 초안을 한 번 만든 뒤 선택 순서대로 intent -> signed upload -> 등록을 직렬 실행한다.
+- 중간 실패 시 성공한 서버 이미지와 실패/남은 로컬 파일을 유지하고 `이미지만 다시 시도`를 제공한다.
+  재시도는 같은 초안 ID를 사용하고 이미 등록된 파일을 다시 업로드하지 않는다.
+- 편집 화면의 이미지 저장/재시도는 텍스트 `expectedUpdatedAt` 저장과 별도다. `409`는 최신
+  이미지 목록을 새로 불러오라는 안내를 표시한다.
+- queued/uploading/failed 파일, 활성 intent 또는 deleting 이미지가 있으면 검토 요청을 막는다.
+- 삭제는 확인 dialog를 거쳐 앱 조회에서 즉시 숨기고, 실패하면 멱등 재시도 가능한 상태를 표시한다.
+- `draft|rejected`만 mutation 컨트롤을 사용한다. 나머지 레슨 상태는 이미지 목록만 읽는다.
+
+공개 화면:
+
+- 목록 카드는 ready 순서 0의 표지를 사용하고 상세는 ready 이미지 최대 5장을 순서대로 제공한다.
+- 이미지가 없거나 로드에 실패하면 기존 안전한 대체 이미지를 사용하고 레이아웃 크기를 유지한다.
+- `lesson-images`는 public bucket이므로 삭제된 URL의 모든 CDN 캐시가 즉시 회수된다고 안내하지 않는다.
+
+## 20. 일정 관리
 
 후보 경로:
 
@@ -986,7 +1083,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 
 - 이미 확정 예약이 있는 일정은 삭제 대신 닫기 또는 관리자 처리로 제한한다.
 
-## 20. 지도자 예약 관리
+## 21. 지도자 예약 관리
 
 후보 경로:
 
@@ -1021,7 +1118,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - `POST /api/reservations/{reservationId}/cancel`
 - `POST /api/reservations/{reservationId}/no-show`
 
-## 21. 지도자 정산
+## 22. 지도자 정산
 
 후보 경로:
 
@@ -1051,7 +1148,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - 계좌 전체 번호는 표시하지 않는다.
 - 보류 사유는 명확히 표시한다.
 
-## 22. 관리자 홈
+## 23. 관리자 홈
 
 후보 경로:
 
@@ -1065,20 +1162,43 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 
 주요 콘텐츠:
 
-- 지도자 인증 대기 수
-- 신고 대기 수
-- 분쟁 예약 수
-- 정산 보류 수
+- 다섯 개 처리 대기 큐의 count-only 수와 각 목록 링크. 행 미리 보기, 개인식별정보(PII),
+  금액, 자격증 경로, provider payload는 표시하지 않는다.
 
-연결 API:
+| 작업 큐 | 포함 상태 | 대상 화면 |
+|---------|-----------|-----------|
+| 지도자 심사 | `submitted` | `/admin/coaches?status=submitted&page=1&pageSize=20` |
+| 레슨 승인 | `pending_review` | `/admin/lessons` |
+| 신고 처리 | `submitted+reviewing` | `/admin/reports?status=open&page=1&pageSize=20` |
+| 분쟁 예약 | `disputed` | `/admin/reservations?status=disputed&page=1&pageSize=20` |
+| 정산 보류 | `hold` | `/admin/settlements?status=hold` |
 
-- 관리자 API 묶음
+접근과 읽기 경계:
+
+- Server Component는 `auth.kind === "ready"`, `profile.role === "admin"`,
+  `profile.status === "active"`인 활성 관리자만 읽는다. 그 밖의 계정 상태는 기존 로그인,
+  온보딩, 제한 계정, 마이페이지 redirect 경계를 따른다.
+- 각 페이지 요청에서 동시에 다섯 count-only 읽기를 시작한 best-effort load-time snapshot을
+  표시한다. 강한 일관성의 strong transactional snapshot, RPC, view, migration은 추가하지 않는다.
+- 어느 하나의 count 읽기라도 실패하면 부분값이나 0으로 대체하지 않고 전체 페이지 오류 상태로
+  전환하며, retry 후 다시 읽는다. `0건`도 유효한 결과이며 대상 목록으로 가는 링크를 유지한다.
+- 새 HTTP endpoint는 추가하지 않는다. Server Component의 내부 읽기 모델만 사용하며 mutation,
+  polling, Realtime도 이 화면의 범위가 아니다.
+
+범위 결정:
+
+- 1A: 활성 관리자에게만 header의 `마이` 앞에 `/admin` 진입을 제공하며, 기존 관리자 화면 전체를
+  공통 shell로 재구성하지 않는다.
+- 2A: 정확히 다섯 개 count-and-link 타일만 표시하며 row preview를 추가하지 않는다.
+- 3A: failing-first TDD plus managed responsive Playwright verification at 390/768/1280, local-only.
+- 이 화면은 local-only Supabase 범위다. Hosted Supabase, Realtime delivery, payout 및 provider
+  기능은 deferred 상태로 유지한다.
 
 권한:
 
-- `profiles.role = admin`
+- 활성 관리자 서버 검증
 
-## 23. 관리자 지도자 인증
+## 24. 관리자 지도자 인증
 
 구현 경로:
 
@@ -1122,7 +1242,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - 승인/반려 뒤 신청 상태와 앱 내 알림을 확인할 수 있고, 자격증 공개 URL이나 service-role
   값은 DOM, 콘솔, evidence에 노출하지 않는다.
 
-## 24. 관리자 신고 검토
+## 25. 관리자 신고 검토
 
 후보 경로:
 
@@ -1155,7 +1275,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - `GET /api/reports` with admin scope
 - `POST /api/admin/reports/{reportId}/resolve`
 
-## 25. 관리자 예약/결제 확인
+## 26. 관리자 예약/결제 확인
 
 후보 경로:
 
@@ -1188,6 +1308,21 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - `POST /api/admin/reservations/{reservationId}/status`
 - `POST /api/refunds/{refundId}/process`
 - `POST /api/settlements/{settlementId}/hold`
+
+## 27. 고우선 서비스 상태 표면
+
+다음 상태는 현재 local MVP가 표시하고 서버 계약으로 검증한다.
+
+| 표면 | 구현 상태와 주요 액션 |
+|------|----------------------|
+| 예약 상세/지도자 예약 | `confirmed`에서 `completed`, `no_show_user`, `no_show_coach`를 서버 시각과 KST 일정으로 판정하며 완료/노쇼 시각·행위자·금액은 입력받지 않는다. |
+| 찜/리뷰 | 활성 레슨 찜 추가·삭제, 완료 예약 1건당 리뷰 1건, 관리자 리뷰 숨김을 제공한다. |
+| 신고/차단 | `message` 대상은 제외하고 신고·차단·관리자 처리 및 앱 내 알림 결과를 제공한다. |
+| 알림 | 소유자 목록/읽음 처리와 완료·노쇼·리뷰 요청·신고·환불·정산·지도자 상태 이벤트를 제공한다. push delivery는 제공하지 않는다. |
+| 환불/정산 | 내부 환불은 `requested/approved/completed/failed` reconciliation 계약만 제공하고, 정산은 `pending/hold/approved`까지만 제공한다. Toss refund execution과 payout은 제공하지 않는다. |
+
+각 상태의 HTTP payload, 허용 action, DB 테이블/RPC, 오류와 재시도 규칙은
+`SPOLINK_API_명세서.md`와 `SPOLINK_ERD.md`를 단일 계약으로 사용한다.
 
 ## 상태별 공통 UI
 
@@ -1266,7 +1401,8 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 | 레슨 상세 | `GET /api/lessons/{lessonId}`, `GET /api/lessons/{lessonId}/schedules` |
 | 예약 확인 | `POST /api/reservations` |
 | 결제 | `POST /api/payments/prepare`, `POST /api/payments/confirm` |
-| 예약 상세 | `GET /api/reservations/{reservationId}` |
+| 예약 완료 | Server Component 학습자 소유 읽기 모델, `GET /api/reservations/{reservationId}/calendar` |
+| 예약 상세 | Server Component 학습자 소유 읽기 모델 (일반 `GET /api/reservations/{reservationId}`는 현재 미구현) |
 | 리뷰 작성 | `POST /api/reviews` |
 | 신고 | `POST /api/reports` |
 | 지도자 대시보드 | `GET /api/reservations?role=coach`, `GET /api/settlements` |

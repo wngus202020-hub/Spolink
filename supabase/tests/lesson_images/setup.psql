@@ -1,0 +1,75 @@
+insert into auth.users (
+  instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+) select
+  '00000000-0000-0000-0000-000000000000', id, 'authenticated', 'authenticated',
+  label || '@example.test', '', statement_timestamp(),
+  '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb,
+  statement_timestamp(), statement_timestamp()
+from (values
+  ('81000000-0000-4000-8000-000000000001'::uuid, 'image-owner'),
+  ('81000000-0000-4000-8000-000000000002'::uuid, 'image-unapproved'),
+  ('81000000-0000-4000-8000-000000000003'::uuid, 'image-learner'),
+  ('81000000-0000-4000-8000-000000000004'::uuid, 'image-foreign'),
+  ('81000000-0000-4000-8000-000000000005'::uuid, 'image-admin')
+) fixture(id, label);
+
+insert into public.profiles (id, display_name, role, status) values
+  ('81000000-0000-4000-8000-000000000001', 'Image owner', 'learner', 'coach_approved'),
+  ('81000000-0000-4000-8000-000000000002', 'Unapproved', 'learner', 'pending_coach'),
+  ('81000000-0000-4000-8000-000000000003', 'Learner', 'learner', 'active'),
+  ('81000000-0000-4000-8000-000000000004', 'Foreign coach', 'learner', 'coach_approved'),
+  ('81000000-0000-4000-8000-000000000005', 'Image admin', 'admin', 'active');
+
+insert into public.coach_profiles (id, user_id, status, service_region) values
+  ('82000000-0000-4000-8000-000000000001', '81000000-0000-4000-8000-000000000001',
+   'approved', '서울 강남구'),
+  ('82000000-0000-4000-8000-000000000002', '81000000-0000-4000-8000-000000000002',
+   'submitted', '서울 강남구'),
+  ('82000000-0000-4000-8000-000000000004', '81000000-0000-4000-8000-000000000004',
+   'approved', '서울 송파구');
+
+insert into public.sports (id, name, slug, is_active)
+values ('83000000-0000-4000-8000-000000000001', 'Image Tennis', 'image-tennis', true);
+
+insert into public.lessons (
+  id, coach_profile_id, sport_id, title, description, region,
+  duration_minutes, price_amount, capacity, status
+) select
+  id, coach_id, '83000000-0000-4000-8000-000000000001', title,
+  'Lesson image database test fixture.', '서울 강남구', 60, 50000, 4, status::public.lesson_status
+from (values
+  ('84000000-0000-4000-8000-000000000001'::uuid, '82000000-0000-4000-8000-000000000001'::uuid, 'Draft images', 'draft'),
+  ('84000000-0000-4000-8000-000000000002'::uuid, '82000000-0000-4000-8000-000000000001'::uuid, 'Rejected images', 'rejected'),
+  ('84000000-0000-4000-8000-000000000003'::uuid, '82000000-0000-4000-8000-000000000001'::uuid, 'Active images', 'active'),
+  ('84000000-0000-4000-8000-000000000004'::uuid, '82000000-0000-4000-8000-000000000004'::uuid, 'Foreign images', 'draft'),
+  ('84000000-0000-4000-8000-000000000005'::uuid, '82000000-0000-4000-8000-000000000001'::uuid, 'Capacity images', 'draft'),
+  ('84000000-0000-4000-8000-000000000006'::uuid, '82000000-0000-4000-8000-000000000001'::uuid, 'Reorder images', 'draft'),
+	  ('84000000-0000-4000-8000-000000000007'::uuid, '82000000-0000-4000-8000-000000000001'::uuid, 'Pending submit', 'draft'),
+	  ('84000000-0000-4000-8000-000000000008'::uuid, '82000000-0000-4000-8000-000000000001'::uuid, 'Deleting submit', 'draft'),
+	  ('84000000-0000-4000-8000-000000000009'::uuid, '82000000-0000-4000-8000-000000000001'::uuid, 'Register retry', 'draft')
+) fixture(id, coach_id, title, status);
+
+create function pg_temp.set_image_actor(checked_actor uuid, checked_role text default 'authenticated')
+returns void language sql as $$
+  select set_config(
+    'request.jwt.claims',
+    jsonb_build_object('sub', checked_actor, 'role', checked_role)::text,
+    true
+  );
+  select set_config('request.jwt.claim.sub', coalesce(checked_actor::text, ''), true);
+  select set_config('request.jwt.claim.role', checked_role, true);
+$$;
+
+create function pg_temp.hasnt_table_privilege(
+  checked_role name,
+  checked_relation text,
+  checked_privilege text,
+  checked_description text
+)
+returns text language sql as $$
+  select ok(
+    not pg_catalog.has_table_privilege(checked_role, checked_relation, checked_privilege),
+    checked_description
+  );
+$$;

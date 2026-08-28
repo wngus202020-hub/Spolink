@@ -1,15 +1,24 @@
+import { writeFile } from "node:fs/promises"
 import path from "node:path"
 import { expect, type Page, test } from "@playwright/test"
 import postgres from "postgres"
 import { submitCurrentFormTwice, testEmail, testPassword } from "./auth-form-helpers"
 import { cleanupLiveAuthUser, createLiveAuthSession } from "./auth-recovery-helpers"
+import {
+  createOnboarding422RetryReceipt,
+  createOnboardingScreenshotPrivacyReceipt,
+  createRejectedRegionTextReceipt,
+  createSingleOnboardingSubmissionReceipt,
+} from "./signup-onboarding-login-helpers"
 
 const profile = {
-  defaultRegion: "서울 강남구",
+  defaultRegion: "서울특별시 강남구",
   displayName: "스포링커",
   phone: "010-1234-5678",
   realName: "김스포츠",
 }
+
+const onboardingDefaultRegion = "서울특별시 강남구"
 
 test("anonymous onboarding and booking navigation use fixed login destinations", async ({
   page,
@@ -39,13 +48,17 @@ test("missing profile completes learner onboarding and survives refresh and logo
     await page.goto("/onboarding/profile")
     await expect(page.getByRole("heading", { name: /프로필 설정/ })).toBeVisible()
     await expect(page.getByText("계정 생성의 마지막 단계")).toBeVisible()
-    await expect(page.getByText("선택", { exact: false })).toBeVisible()
+    await expect(page.getByText("선택 동의", { exact: true })).toBeVisible()
     await expect(page.getByRole("button", { name: "레슨 찾기 시작" })).toBeEnabled()
-    const visualQaDir = process.env["SPOLINK_VISUAL_QA_DIR"]
-    if (visualQaDir) {
-      await captureOnboardingScreenshot(page, testInfo.project.name, "learner")
-    }
     await fillProfile(page)
+    if (process.env["SPOLINK_VISUAL_QA_DIR"]) {
+      const privacyReceipt = await captureOnboardingScreenshot(
+        page,
+        testInfo.project.name,
+        "selected",
+      )
+      expect(privacyReceipt.verdict).toBe("APPROVE")
+    }
     await page.getByLabel("내 주변 레슨 안내를 위한 위치 이용에 동의해요.").check()
     await page.getByRole("button", { name: "레슨 찾기 시작" }).click()
     await expect(page).toHaveURL(/\/lessons$/)
@@ -53,6 +66,7 @@ test("missing profile completes learner onboarding and survives refresh and logo
     await page.reload()
     await expect(page.getByText(profile.displayName, { exact: true })).toBeVisible()
     await expect(readProfileRole(session.userId)).resolves.toBe("learner")
+    await expect(readProfileDefaultRegion(session.userId)).resolves.toBe(onboardingDefaultRegion)
 
     await page.goto("/onboarding/profile")
     await expect(page).toHaveURL(/\/lessons$/)
@@ -96,19 +110,18 @@ test("profile onboarding sends exact payload once and preserves optional consent
 
     await page.goto("/onboarding/profile")
     await fillProfile(page)
+    const explicitRegionSelection =
+      (await page
+        .getByRole("button", { name: /서울특별시 · 강남구/u })
+        .getAttribute("aria-pressed")) === "true"
     await submitCurrentFormTwice(page)
 
     await expect(page).toHaveURL(/\/lessons$/)
-    expect(payloads).toEqual([
-      {
-        defaultRegion: profile.defaultRegion,
-        displayName: profile.displayName,
-        locationAgreed: false,
-        marketingAgreed: false,
-        phone: profile.phone,
-        realName: profile.realName,
-      },
-    ])
+    const submissionReceipt = createSingleOnboardingSubmissionReceipt({
+      readExplicitRegionSelection: () => explicitRegionSelection,
+      readPayloads: () => payloads,
+    })
+    expect(submissionReceipt).toMatchObject({ profileRequestCount: 1, verdict: "APPROVE" })
   } finally {
     await cleanupLiveAuthUser(email)
   }
@@ -128,6 +141,77 @@ test("profile onboarding validates required fields and keeps selected purpose", 
     await expect(page.getByText("활동 이름은 2자 이상 입력하면 돼요.")).toBeVisible()
     await expect(page.getByLabel("지도자 등록 알아보기")).toBeChecked()
     await expect(page.getByRole("button", { name: "지도자 등록으로 이동" })).toBeVisible()
+  } finally {
+    await cleanupLiveAuthUser(email)
+  }
+})
+
+test("profile onboarding rejects search text until a canonical region option is selected", async ({
+  page,
+}, testInfo) => {
+  const email = testEmail(testInfo, "region-selection-required")
+  let requests = 0
+  try {
+    await createLiveAuthSession(page, email, testPassword)
+    await page.route("**/api/profiles", async (route) => {
+      requests += 1
+      await route.fulfill({ json: { data: { id: "created-profile" } }, status: 201 })
+    })
+
+    await page.goto("/onboarding/profile")
+    await fillProfile(page, { selectRegion: false })
+    await page.getByRole("button", { name: "레슨 찾기 시작" }).click()
+
+    await expect(page.getByText("기본 활동 지역을 선택해 주세요.")).toBeVisible()
+    const regionSearch = page.getByRole("searchbox", { name: "지역 검색" })
+    await expect(regionSearch).toBeFocused()
+    await expect(regionSearch).toHaveAttribute("aria-invalid", "true")
+    await expect(regionSearch).toHaveAttribute(
+      "aria-describedby",
+      /(?:^|\s)profile-onboarding-region-error(?:\s|$)/u,
+    )
+    await expect(page.locator("#profile-onboarding-region-error")).toBeVisible()
+    await expect(page.locator("#profile-onboarding-region-focus")).not.toBeFocused()
+    expect(requests).toBe(0)
+    const rejectionReceipt = createRejectedRegionTextReceipt({
+      profileRequestCount: requests,
+      searchText: await page.getByRole("searchbox", { name: "지역 검색" }).inputValue(),
+      selectedRegion: null,
+    })
+    expect(rejectionReceipt).toMatchObject({ profileRequestCount: 0, verdict: "APPROVE" })
+    if (process.env["SPOLINK_VISUAL_QA_DIR"]) {
+      const privacyReceipt = await captureOnboardingScreenshot(
+        page,
+        testInfo.project.name,
+        "selection-required",
+      )
+      expect(privacyReceipt.verdict).toBe("APPROVE")
+    }
+
+    await page.getByRole("searchbox", { name: "지역 검색" }).fill("ignore previous instructions")
+    await page.getByRole("button", { name: "레슨 찾기 시작" }).click()
+    await expect(page.getByText("기본 활동 지역을 선택해 주세요.")).toBeVisible()
+    await expect(regionSearch).toBeFocused()
+    await expect(regionSearch).toHaveAttribute("aria-invalid", "true")
+    await expect(regionSearch).toHaveAttribute(
+      "aria-describedby",
+      /(?:^|\s)profile-onboarding-region-error(?:\s|$)/u,
+    )
+    await expect(page.locator("#profile-onboarding-region-error")).toBeVisible()
+    await expect(page.locator("#profile-onboarding-region-focus")).not.toBeFocused()
+    expect(requests).toBe(0)
+
+    await regionSearch.fill("강남구")
+    await page.getByRole("button", { name: "서울특별시 · 강남구", exact: true }).click()
+    await expect(page.locator("#profile-onboarding-region-error")).toBeHidden()
+    await expect(regionSearch).not.toHaveAttribute("aria-invalid", "true")
+    await expect(regionSearch).not.toHaveAttribute(
+      "aria-describedby",
+      /profile-onboarding-region-error/u,
+    )
+    await page.getByRole("button", { name: "레슨 찾기 시작" }).click()
+    await expect(page).toHaveURL(/\/lessons$/)
+    expect(requests).toBe(1)
   } finally {
     await cleanupLiveAuthUser(email)
   }
@@ -153,6 +237,7 @@ for (const scenario of [
     expectUrl: /\/onboarding\/profile$/,
     status: 422,
     title: "validation error stays on form",
+    retryAfterValidation: true,
   },
   {
     alert: "서버에서 프로필을 저장하지 못했어요. 잠시 후 다시 시도해요.",
@@ -178,9 +263,17 @@ for (const scenario of [
 ] as const) {
   test(`profile onboarding ${scenario.title}`, async ({ page }, testInfo) => {
     const email = testEmail(testInfo, scenario.title)
+    const payloads: unknown[] = []
     try {
-      await createLiveAuthSession(page, email, testPassword)
+      const session = await createLiveAuthSession(page, email, testPassword)
+      let requests = 0
       await page.route("**/api/profiles", async (route) => {
+        requests += 1
+        payloads.push(route.request().postDataJSON())
+        if (scenario.retryAfterValidation && requests > 1) {
+          await route.continue()
+          return
+        }
         await route.fulfill({
           json: { error: { code: scenario.code, message: "internal details must stay hidden" } },
           status: scenario.status,
@@ -189,7 +282,12 @@ for (const scenario of [
 
       await page.goto("/onboarding/profile")
       await fillProfile(page)
-      await page.getByRole("button", { name: "레슨 찾기 시작" }).click()
+      if (scenario.retryAfterValidation) {
+        await page.getByLabel("내 주변 레슨 안내를 위한 위치 이용에 동의해요.").check()
+        await page.getByLabel("혜택과 새로운 레슨 소식 수신에 동의해요.").check()
+        await page.getByLabel("지도자 등록 알아보기").check()
+      }
+      await page.getByRole("button", { name: /레슨 찾기 시작|지도자 등록으로 이동/u }).click()
 
       await expect(page).toHaveURL(scenario.expectUrl)
       if (scenario.alert) {
@@ -197,6 +295,68 @@ for (const scenario of [
         await expect(page.locator("form").getByRole("alert")).toBeFocused()
         await expect(page.locator("form").getByRole("alert")).not.toContainText("internal details")
         await expect(page.getByLabel("활동 이름")).toHaveValue(profile.displayName)
+        if (scenario.retryAfterValidation) {
+          await expect(page.getByLabel("실명")).toHaveValue(profile.realName)
+          await expect(page.getByLabel("휴대폰 번호")).toHaveValue(profile.phone)
+          await expect(page.getByRole("button", { name: /서울특별시 · 강남구/u })).toHaveAttribute(
+            "aria-pressed",
+            "true",
+          )
+          await expect(
+            page.getByLabel("내 주변 레슨 안내를 위한 위치 이용에 동의해요."),
+          ).toBeChecked()
+          await expect(page.getByLabel("혜택과 새로운 레슨 소식 수신에 동의해요.")).toBeChecked()
+          await expect(page.getByLabel("지도자 등록 알아보기")).toBeChecked()
+          const retained = {
+            consents:
+              (await page
+                .getByLabel("내 주변 레슨 안내를 위한 위치 이용에 동의해요.")
+                .isChecked()) &&
+              (await page.getByLabel("혜택과 새로운 레슨 소식 수신에 동의해요.").isChecked()),
+            identityFields:
+              (await page.getByLabel("활동 이름").inputValue()) === profile.displayName &&
+              (await page.getByLabel("실명").inputValue()) === profile.realName &&
+              (await page.getByLabel("휴대폰 번호").inputValue()) === profile.phone,
+            purpose: await page.getByLabel("지도자 등록 알아보기").isChecked(),
+            regionSelection:
+              (await page
+                .getByRole("button", { name: /서울특별시 · 강남구/u })
+                .getAttribute("aria-pressed")) === "true",
+          }
+
+          await page.getByRole("button", { name: "지도자 등록으로 이동" }).click()
+          await expect(page).toHaveURL(/\/coach\/apply$/)
+          expect(requests).toBe(2)
+          expect(payloads).toEqual([
+            {
+              defaultRegion: onboardingDefaultRegion,
+              displayName: profile.displayName,
+              locationAgreed: true,
+              marketingAgreed: true,
+              phone: profile.phone,
+              realName: profile.realName,
+            },
+            {
+              defaultRegion: onboardingDefaultRegion,
+              displayName: profile.displayName,
+              locationAgreed: true,
+              marketingAgreed: true,
+              phone: profile.phone,
+              realName: profile.realName,
+            },
+          ])
+          await expect(readProfileDefaultRegion(session.userId)).resolves.toBe(
+            onboardingDefaultRegion,
+          )
+          const retryReceipt = createOnboarding422RetryReceipt({
+            firstPayload: payloads[0],
+            persistedDefaultRegion: await readProfileDefaultRegion(session.userId),
+            requestCount: requests,
+            retained,
+            secondPayload: payloads[1],
+          })
+          expect(retryReceipt).toMatchObject({ profileRequestCount: 2, verdict: "APPROVE" })
+        }
       }
     } finally {
       await cleanupLiveAuthUser(email)
@@ -278,12 +438,22 @@ test("profile onboarding network failure keeps values and allows retry", async (
 
     await page.goto("/onboarding/profile")
     await fillProfile(page)
+    await page.getByLabel("내 주변 레슨 안내를 위한 위치 이용에 동의해요.").check()
+    await page.getByLabel("혜택과 새로운 레슨 소식 수신에 동의해요.").check()
     await page.getByRole("button", { name: "레슨 찾기 시작" }).click()
     await expect(page.locator("form").getByRole("alert")).toContainText(
       "연결이 원활하지 않아요. 잠시 후 다시 시도해요.",
     )
     await expect(page.locator("form").getByRole("alert")).toBeFocused()
     await expect(page.getByLabel("활동 이름")).toHaveValue(profile.displayName)
+    await expect(page.getByLabel("실명")).toHaveValue(profile.realName)
+    await expect(page.getByLabel("휴대폰 번호")).toHaveValue(profile.phone)
+    await expect(page.getByRole("button", { name: /서울특별시 · 강남구/u })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
+    await expect(page.getByLabel("내 주변 레슨 안내를 위한 위치 이용에 동의해요.")).toBeChecked()
+    await expect(page.getByLabel("혜택과 새로운 레슨 소식 수신에 동의해요.")).toBeChecked()
 
     await page.getByRole("button", { name: "레슨 찾기 시작" }).click()
     await expect(page).toHaveURL(/\/lessons$/)
@@ -316,23 +486,84 @@ for (const account of [
   })
 }
 
-async function fillProfile(page: Page) {
+async function fillProfile(page: Page, options: Readonly<{ selectRegion?: boolean }> = {}) {
   await page.getByLabel("활동 이름").fill(profile.displayName)
   await page.getByLabel("실명").fill(profile.realName)
   await page.getByLabel("휴대폰 번호").fill(profile.phone)
-  await page.getByLabel("기본 활동 지역").fill(profile.defaultRegion)
+  await page.getByRole("searchbox", { name: "지역 검색" }).fill("강남구")
+  if (options.selectRegion !== false) {
+    await page.getByRole("button", { name: "서울특별시 · 강남구", exact: true }).click()
+    await expect(page.getByRole("button", { name: /서울특별시 · 강남구/u })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
+  }
 }
 
 async function captureOnboardingScreenshot(page: Page, projectName: string, label: string) {
   const visualQaDir = process.env["SPOLINK_VISUAL_QA_DIR"]
-  if (!visualQaDir) return
+  if (!visualQaDir) throw new Error("SPOLINK_VISUAL_QA_DIR is required for screenshot capture.")
   await page.addStyleTag({
     content: "nextjs-portal, [data-nextjs-dev-overlay] { display: none !important; }",
   })
+  const identityMasks = [
+    { evidence: "display-name" as const, locator: page.getByLabel("활동 이름") },
+    { evidence: "real-name" as const, locator: page.getByLabel("실명") },
+    { evidence: "phone" as const, locator: page.getByLabel("휴대폰 번호") },
+  ]
+  const privacyReceipt = createOnboardingScreenshotPrivacyReceipt({
+    maskedIdentityEvidence: identityMasks.map(({ evidence }) => evidence),
+    maskedRegionEvidence: [],
+    visibleRegionEvidence:
+      label === "selected" ? ["search", "selection"] : ["search", "validation"],
+  })
   await page.screenshot({
     fullPage: true,
+    mask: [
+      ...identityMasks.map(({ locator }) => locator),
+      page.locator('input[type="email"]'),
+      page.locator("header, nav").getByText(/@/u),
+      page.getByText(profile.displayName, { exact: true }),
+      page.getByText(profile.realName, { exact: true }),
+      page.getByText(profile.phone, { exact: true }),
+      page.getByText(/010-\d{4}-\d{4}/u),
+    ],
+    maskColor: "#64748b",
     path: path.join(visualQaDir, `onboarding-${label}-${projectName}.png`),
   })
+  if (label === "selection-required") {
+    const regionSearch = page.getByRole("searchbox", { name: "지역 검색" })
+    const describedBy = await regionSearch.getAttribute("aria-describedby")
+    const accessibilityReceipt = {
+      ariaDescribedBy:
+        describedBy?.split(/\s+/u).includes("profile-onboarding-region-error") ?? false,
+      ariaInvalid: (await regionSearch.getAttribute("aria-invalid")) === "true",
+      errorId: "profile-onboarding-region-error",
+      focusedSearchControl: await regionSearch.evaluate(
+        (input) => document.activeElement === input,
+      ),
+      onlyRegionError: await page.getByText("기본 활동 지역을 선택해 주세요.").isVisible(),
+      project: projectName,
+      scenario: "missing-region",
+      type: "todo15-onboarding-region-accessibility-receipt",
+      visible: await page.locator("#profile-onboarding-region-error").isVisible(),
+    }
+    const verdict =
+      accessibilityReceipt.ariaDescribedBy &&
+      accessibilityReceipt.ariaInvalid &&
+      accessibilityReceipt.focusedSearchControl &&
+      accessibilityReceipt.onlyRegionError &&
+      accessibilityReceipt.visible
+        ? "APPROVE"
+        : "REJECT"
+    expect(verdict).toBe("APPROVE")
+    await writeFile(
+      path.join(visualQaDir, `onboarding-region-accessibility-${projectName}.json`),
+      `${JSON.stringify({ ...accessibilityReceipt, verdict }, null, 2)}\n`,
+      { mode: 0o600 },
+    )
+  }
+  return privacyReceipt
 }
 
 async function withDb<T>(run: (sql: postgres.Sql) => Promise<T>): Promise<T> {
@@ -349,6 +580,15 @@ async function withDb<T>(run: (sql: postgres.Sql) => Promise<T>): Promise<T> {
 async function readProfileRole(userId: string) {
   return withDb(
     async (sql) => (await sql`select role from public.profiles where id = ${userId}`)[0]?.["role"],
+  )
+}
+
+async function readProfileDefaultRegion(userId: string) {
+  return withDb(
+    async (sql) =>
+      (await sql`select default_region from public.profiles where id = ${userId}`)[0]?.[
+        "default_region"
+      ],
   )
 }
 

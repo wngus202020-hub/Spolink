@@ -59,6 +59,7 @@ function buildE2eEnv(env, controls) {
     "SPOLINK_E2E_INJECT_FAILURE",
     "SPOLINK_E2E_QA_HOLD_SECONDS",
     "SPOLINK_E2E_QA_METADATA",
+    "SPOLINK_TASK3_ATTEMPT_DIR",
   ]) {
     if (typeof controls[key] === "string" && controls[key].length > 0) result[key] = controls[key]
   }

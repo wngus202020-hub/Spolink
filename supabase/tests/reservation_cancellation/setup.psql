@@ -185,6 +185,38 @@ begin
     capacity = excluded.capacity,
     updated_at = statement_timestamp();
 
+  delete from public.refunds
+  where reservation_id in (
+    '00000000-0000-4000-8000-000000000401',
+    '00000000-0000-4000-8000-000000000402'
+  );
+
+  delete from public.notifications
+  where data ->> 'reservationId' in (
+    '00000000-0000-4000-8000-000000000401',
+    '00000000-0000-4000-8000-000000000402'
+  );
+
+  delete from public.audit_logs
+  where target_id in (
+    '00000000-0000-4000-8000-000000000401',
+    '00000000-0000-4000-8000-000000000402',
+    '00000000-0000-4000-8000-000000000501',
+    '00000000-0000-4000-8000-000000000502'
+  );
+
+  delete from public.payments
+  where reservation_id in (
+    '00000000-0000-4000-8000-000000000401',
+    '00000000-0000-4000-8000-000000000402'
+  );
+
+  delete from public.reservations
+  where id in (
+    '00000000-0000-4000-8000-000000000401',
+    '00000000-0000-4000-8000-000000000402'
+  );
+
   insert into public.lesson_schedules (
     id,
     lesson_id,
@@ -409,6 +441,15 @@ begin
     '00000000-0000-4000-8000-000000000402',
     '00000000-0000-4000-8000-000000000502'
   );
+
+  update public.reservations
+  set
+    status = 'pending_payment',
+    payment_expires_at = transaction_timestamp() + interval '10 minutes',
+    confirmed_at = null,
+    cancelled_at = null,
+    cancellation_reason = null
+  where id = '00000000-0000-4000-8000-000000000402';
 
   update public.lesson_schedules
   set

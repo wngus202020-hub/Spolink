@@ -42,6 +42,7 @@ async function main() {
           console.error(redactFailure(`${result.stdout}\n${result.stderr}`))
         return {
           exitCode: result.exitCode,
+          playwright: readPlaywrightSummary(result.stdout),
           resultHash: sha256(`${result.stdout}${result.stderr}`),
           signal: result.signal,
           spec,
@@ -66,4 +67,19 @@ function redactFailure(value) {
     .replace(/\b[A-Za-z0-9._%+-]+@spolink\.test\b/giu, "<redacted-email>")
     .replace(/\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/gu, "<redacted-jwt>")
     .replace(/\bpostgres(?:ql)?:\/\/[^\s"'<>]+/giu, "<redacted-postgres-url>")
+}
+
+function readPlaywrightSummary(output) {
+  const readCount = (label) =>
+    Number(output.match(new RegExp(`\\b(\\d+) ${label}\\b`, "u"))?.[1] ?? 0)
+  const passedCount = readCount("passed")
+  const failedCount = readCount("failed")
+  const skippedCount = readCount("skipped")
+
+  return {
+    failedCount,
+    passedCount,
+    skippedCount,
+    testCount: passedCount + failedCount + skippedCount,
+  }
 }

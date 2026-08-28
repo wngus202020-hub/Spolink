@@ -31,7 +31,6 @@ async function main() {
         cleanupReceiptPath,
         enableConfirmations: false,
         evidencePaths: [cleanupReceiptPath, outputPath],
-        tempPaths: rawOutput.retained ? [] : [rawOutput.dir],
       },
       async ({ baseUrl, lifecycle, status }) => {
         const result = await lifecycle.runBrowserChild(

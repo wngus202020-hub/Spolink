@@ -41,6 +41,14 @@ Content-Type: application/json
 
 - 상태를 변경하는 JSON Route Handler는 브라우저 요청의 `Origin`이 요청 URL 또는 보존된 `Host`와 같은 same-origin이어야 한다.
 - 상태를 변경하는 JSON Route Handler는 `Content-Type: application/json`을 요구한다. `charset=utf-8` 같은 media type 파라미터는 허용한다.
+- 상태 변경 요청은 저장 상태가 아니라 명령(`action`)을 받는다. 허용된 명령과 선택적 사유 외의
+  `status`, actor/owner/reviewer ID, 처리 시각, 금액, 감사/알림 payload 필드는 422로 거절한다.
+- actor와 owner는 검증된 claims와 잠근 DB 행에서, reviewer와 처리 시각은 활성 admin workflow와
+  서버 시각에서, 예약·환불·정산 금액은 잠근 예약/결제/환불 행에서 파생한다.
+- mutation 응답은 성공과 실패 모두 `Cache-Control: private, no-store`다. 동일 리소스·동일 action·
+  동일 정규화 입력의 재시도만 기존 결과를 반환하며, 반대 action 또는 stale 상태는 409다.
+- 일반 사용자와 활성 admin 모두 보호 테이블을 직접 `INSERT/UPDATE/DELETE`할 수 없다. 명시적으로
+  grant된 `security definer` workflow RPC만 상태, reviewer, 시각, 금액과 부수 효과를 기록한다.
 
 ### 공통 응답
 
@@ -127,7 +135,7 @@ Content-Type: application/json
   "realName": "홍길동",
   "phone": "010-0000-0000",
   "avatarPath": null,
-  "defaultRegion": "서울 강남구",
+  "defaultRegion": "서울특별시 강남구",
   "locationAgreedAt": "2026-07-19T00:00:00.000Z",
   "marketingAgreedAt": null,
   "deletedAt": null,
@@ -147,6 +155,9 @@ Content-Type: application/json
 ```
 
 nullable DB 필드는 JSON `null`로 반환하고, 모든 timestamp는 UTC ISO-8601 문자열이다. 응답에 snake_case 또는 내부 필드를 넣지 않는다.
+
+- Profile `defaultRegion`의 canonical non-null 값은 `lessonRegions`의 province/district canonical `queryValue`다.
+- `profiles.default_region` 열은 nullable text로 유지한다. canonical 검증은 HTTP/profile UI 경계에서만 시행하며, 자동 마이그레이션이나 DB CHECK 제약을 추가하지 않는다.
 
 공통 상태 매트릭스:
 
@@ -183,6 +194,7 @@ GET /api/me
 - 서버 검증 Auth 사용자 기준으로 RLS 소유 프로필을 조회한다.
 - 프로필이 없으면 409 `PROFILE_REQUIRED`를 반환한다.
 - 계정 제한/삭제 상태는 공통 상태 매트릭스를 따른다.
+- 기존 legacy 값은 GET에서 그대로 반환하며 자동으로 canonical 값으로 변환하지 않는다.
 
 ### 프로필 생성
 
@@ -199,7 +211,7 @@ POST /api/profiles
   "displayName": "홍길동",
   "realName": "홍길동",
   "phone": "010-0000-0000",
-  "defaultRegion": "서울 강남구",
+  "defaultRegion": "서울특별시 강남구",
   "locationAgreed": true,
   "marketingAgreed": false
 }
@@ -210,6 +222,8 @@ POST /api/profiles
 - 요청은 정확히 `displayName`, `realName`, `phone`, `defaultRegion`, `locationAgreed`, `marketingAgreed` 여섯 키만 허용한다.
 - 문자열은 trim한다.
 - `displayName`은 2-30자, `realName`은 2-50자, `defaultRegion`은 2-80자다.
+- POST의 `defaultRegion`은 필수이며 `null`일 수 없다. 앞뒤 공백을 trim한 canonical 값만 저장한다.
+- 별칭, 자유 텍스트, 빈 문자열, `null`, 필드 생략은 422 `VALIDATION_ERROR`다.
 - `phone`은 `^01[016789]-[0-9]{3,4}-[0-9]{4}$`를 만족해야 한다.
 - `locationAgreed`, `marketingAgreed`는 boolean이며 둘 다 `false`일 수 있다.
 - `location_agreed_at`, `marketing_agreed_at`은 해당 동의 값이 `true`이면 생성 트랜잭션 시각, `false`이면 `null`로 저장한다.
@@ -240,7 +254,7 @@ PATCH /api/profiles/me
 {
   "displayName": "길동",
   "phone": "010-1111-2222",
-  "defaultRegion": "서울 송파구",
+  "defaultRegion": "서울특별시 강남구",
   "avatarPath": "profiles/user-id/avatar.png"
 }
 ```
@@ -250,7 +264,9 @@ PATCH /api/profiles/me
 - 본인 프로필만 수정 가능하다.
 - 요청은 비어 있지 않은 object여야 하며 `displayName`, `realName`, `phone`, `defaultRegion`, `avatarPath`, `locationAgreed`, `marketingAgreed`만 허용한다.
 - `displayName`은 프로필 생성과 같은 검증을 따르고 `null`일 수 없다.
-- `realName`, `phone`, `defaultRegion`, `avatarPath`는 `null`일 수 있다. null이 아닌 값은 프로필 생성 검증을 따른다.
+- `realName`, `phone`, `avatarPath`는 `null`일 수 있다. null이 아닌 값은 프로필 생성 검증을 따른다.
+- PATCH의 `defaultRegion`은 canonical 값, `null`, 또는 필드 생략만 허용한다. canonical 값은 trim 후 검증하며, `null`은 값을 지운다.
+- `defaultRegion`을 생략한 unrelated PATCH는 기존 legacy 값을 그대로 보존한다.
 - `avatarPath`는 `profiles/{auth.uid}/`로 시작하고, 그 뒤 1-180자의 ASCII 영문/숫자/`._/-`만 허용한다. 빈 세그먼트, `..`, 역슬래시, 선행 슬래시는 금지한다.
 - 생략한 동의 필드는 기존 값을 유지한다. `true`는 현재 timestamp가 `null`일 때만 트랜잭션 시각을 설정하고, `false`는 `null`로 지운다.
 - `id`, `role`, `status`, `deletedAt`, `deleted_at`, `createdAt`, `updatedAt` 등 시스템 필드는 요청에서 받을 수 없고, RLS/트리거로도 보호된다.
@@ -480,6 +496,7 @@ GET /api/lessons
 | `startsAfter` | 일정 시작 하한 |
 | `page` | 페이지 |
 | `pageSize` | 페이지 크기 |
+| `cursor` | `createdAt DESC, id DESC` 순서를 유지하는 불투명 cursor |
 
 응답:
 
@@ -563,6 +580,107 @@ POST /api/lessons
 draft
 ```
 
+이미지는 레슨 생성 요청에 포함하지 않는다. 초안 ID를 받은 뒤 아래 레슨 이미지 전용 API를
+선택 순서대로 호출한다.
+
+### 레슨 이미지 업로드 intent 생성
+
+```http
+POST /api/lessons/{lessonId}/images/upload-intents
+권한: 승인된 Coach, 본인 draft/rejected 레슨
+테이블: lesson_image_upload_intents, Supabase Storage
+```
+
+요청:
+
+```json
+{
+  "mimeType": "image/jpeg",
+  "sizeBytes": 5242880
+}
+```
+
+`image/jpeg`, `image/png`, `image/webp`만 허용하고 파일당 `1..5,242,880` bytes(5 MiB),
+레슨당 ready 이미지와 활성 intent 합계 최대 5개를 적용한다. 성공 `201`은 서버가 생성한
+`intentId`, `<lessonId>/<objectId>.(jpg|png|webp)` 형태의 `objectName`, signed upload
+`uploadUrl`/`token`, `expiresAt`, `expiresIn: 7200`을 반환한다. 브라우저는 bucket, path,
+소유자, 순서, 상태를 지정하지 않으며 signed upload는 overwrite/upsert하지 않는다.
+
+### 레슨 이미지 등록
+
+```http
+POST /api/lessons/{lessonId}/images
+권한: 승인된 Coach, 본인 draft/rejected 레슨
+```
+
+요청:
+
+```json
+{
+  "intentId": "uuid",
+  "objectName": "lesson-uuid/object-uuid.jpg"
+}
+```
+
+서버는 Storage 객체를 다시 내려받아 실제 크기, MIME, 확장자와 JPEG/PNG/WebP magic bytes를
+검증한 뒤에만 `ready` 메타데이터를 원자적으로 등록한다. 성공 `201`은 현재 ready 이미지
+목록을 `sortOrder` 순서로 반환한다. 검증 또는 등록 실패 시 해당 객체와 intent를 멱등 보상
+정리하며, 같은 intent/object 재시도는 중복 이미지를 만들지 않는다.
+
+### 레슨 이미지 순서와 표지 변경
+
+```http
+PATCH /api/lessons/{lessonId}/images/order
+권한: 승인된 Coach, 본인 draft/rejected 레슨
+```
+
+요청:
+
+```json
+{
+  "expectedImageIds": [
+    "00000000-0000-4000-8000-000000000001",
+    "00000000-0000-4000-8000-000000000002"
+  ],
+  "orderedImageIds": [
+    "00000000-0000-4000-8000-000000000002",
+    "00000000-0000-4000-8000-000000000001"
+  ]
+}
+```
+
+두 배열은 중복 없이 같은 최대 5개 ID 집합이어야 한다. 부모 레슨 잠금 아래 현재 순서가
+`expectedImageIds`와 같을 때만 `0..n-1`로 조밀하게 재정렬하며 `sortOrder = 0`이 표지다.
+오래된 배열은 `409 CONFLICT`이고 클라이언트는 최신 목록을 다시 불러온다.
+
+### 레슨 이미지 삭제
+
+```http
+DELETE /api/lessons/{lessonId}/images/{imageId}
+권한: 승인된 Coach, 본인 draft/rejected 레슨
+```
+
+요청:
+
+```json
+{
+  "expectedImageIds": [
+    "00000000-0000-4000-8000-000000000001",
+    "00000000-0000-4000-8000-000000000002"
+  ]
+}
+```
+
+삭제는 `ready -> deleting`으로 즉시 앱의 공개/소유자 ready 조회에서 제외하고 순서를 조밀하게
+만든 뒤 Storage 객체를 제거하고 메타데이터를 마무리한다. 객체가 이미 없으면 성공으로 간주하며,
+Storage 또는 finalize 실패 시 `deleting` 영수증을 남겨 같은 요청으로 안전하게 재시도한다.
+성공 `200`은 남은 ready 이미지 목록을 반환한다.
+
+네 mutation은 same-origin JSON만 받고 `Cache-Control: private, no-store`를 사용한다. 공통 오류는
+`401 UNAUTHENTICATED`, `403 FORBIDDEN`, `404 NOT_FOUND`, `409 CONFLICT`,
+`415 UNSUPPORTED_MEDIA_TYPE`, `422 VALIDATION_ERROR`, `503 UNAVAILABLE`이다. 업로드 intent나
+`deleting` 이미지가 남아 있으면 검토 요청도 `409`로 거절한다.
+
 ### 레슨 수정
 
 ```http
@@ -589,7 +707,7 @@ POST /api/lessons/{lessonId}/status
 
 ```json
 {
-  "status": "active",
+  "action": "approve",
   "reason": "관리자 승인"
 }
 ```
@@ -611,6 +729,10 @@ pending_review -> rejected
 
 - 코치는 본인 레슨을 `draft -> pending_review`, `active -> paused`, `paused -> active`, `active -> closed`로 변경할 수 있다.
 - `pending_review -> active`와 `pending_review -> rejected`는 관리자 승인/반려 경로에서만 처리한다.
+- action은 코치 `submit | pause | resume | close`, 관리자 `approve | reject`만 허용한다. 저장
+  `lesson_status`와 coach/actor/status/timestamp 입력은 받지 않는다.
+- 레슨 생성·수정·상태 변경과 일정 mutation은 `coach_profiles.status = approved`이고 연결된
+  `profiles.status = coach_approved`인 본인 지도자만 수행한다.
 - 상태 변경은 `audit_logs`에 남긴다.
 
 ## 레슨 일정 API
@@ -637,7 +759,11 @@ POST /api/lessons/{lessonId}/schedules
 
 - `endsAt > startsAt`
 - `capacity > 0`
-- 본인 레슨만 일정 생성 가능
+- 승인된 본인 지도자의 레슨만 일정 생성 가능
+- 일정 workflow는 일정 행을 먼저 잠근다. `confirmed`, `completed`, `no_show_user`,
+  `no_show_coach`, `disputed` 예약이 하나라도 있으면 `lessonId`, 시작/종료 시각, capacity를
+  변경할 수 없고, capacity는 어떤 경우에도 `reservedCount`보다 작게 만들 수 없다.
+- `reservedCount`는 결제 확정/취소 workflow만 변경하며 요청 body에 포함할 수 없다.
 
 ### 예약 가능 일정 조회
 
@@ -736,6 +862,9 @@ pending_payment
 
 ### 예약 상세
 
+> 계획 상태 / 현재 미구현
+> 아래 경로, 권한, 테이블 상세는 목표 계약이며 현재 runtime Route Handler를 의미하지 않는다.
+
 ```http
 GET /api/reservations/{reservationId}
 권한: User
@@ -747,6 +876,21 @@ GET /api/reservations/{reservationId}
 - 예약자
 - 관련 지도자
 - 관리자
+
+구현 상태:
+
+- 일반 `GET /api/reservations/{reservationId}` Route Handler는 현재 미구현이다. 학습자 예약 완료 화면은 이 generic GET을 대체하거나 호출하지 않고 Server Component의 학습자 소유 읽기 모델을 사용한다.
+
+### 예약 완료 화면의 서버 읽기와 캘린더
+
+```http
+GET /api/reservations/{reservationId}/calendar
+권한: User (reservation learner owner)
+```
+
+- 예약 완료 화면은 `reservation.status` = `confirmed`와 `payment.status` = `paid`가 모두 저장 상태로 확인된 경우에만 성공 화면을 렌더링한다. `not_found`는 404, `pending`은 `/reservations/{reservationId}/payment`, `terminal`은 `/mypage/reservations/{reservationId}`로 이동하고 `mismatch`와 `read_failure`는 비식별 복구 화면을 사용한다.
+- 캘린더 GET도 인증과 학습자 소유권 및 같은 strict `confirmed` + `paid` 조건을 다시 확인한다. 성공 응답은 `Cache-Control: private, no-store`이고 개인식별정보를 포함하지 않는다.
+- `POST /api/reservations/{reservationId}/complete`는 지도자·관리자 수업 완료 lifecycle용 별도 API다. 예약 완료 화면과 캘린더 GET은 이 POST를 호출하지 않는다.
 
 ### 예약 취소
 
@@ -841,9 +985,13 @@ POST /api/reservations/{reservationId}/complete
 confirmed -> completed
 ```
 
+요청 body는 정확히 `{}`이며 저장 `status`, 완료 시각, actor, 정산 금액을 받지 않는다.
+
 규칙:
 
 - 관련 지도자 또는 관리자만 완료 처리한다.
+- 동일 완료 action 재시도만 멱등이며 no-show/취소/분쟁과의 경합은 잠근 예약 행에서 한 요청만
+  승리하고 나머지는 409다.
 - 완료 처리 후 정산 대기 데이터 생성을 예약한다.
 - 리뷰 작성 가능 상태가 된다.
 
@@ -859,7 +1007,7 @@ POST /api/reservations/{reservationId}/no-show
 
 ```json
 {
-  "target": "learner",
+  "action": "mark_learner_no_show",
   "reason": "수업 시작 후 대기 시간 초과"
 }
 ```
@@ -875,6 +1023,11 @@ confirmed -> no_show_coach
 
 - 학습자 노쇼는 원칙적으로 환불하지 않는다.
 - 지도자 노쇼는 전액 환불과 정산 제외 대상이다.
+- action은 `mark_learner_no_show | mark_coach_no_show`만 허용한다. 저장 status, 처리 시각,
+  actor, 환불/정산 금액은 받지 않는다.
+- KST 일정 시작 instant로부터 정확히 15분이 지난 뒤(`starts_at + interval '15 minutes' <=
+  statement_timestamp()`)만 처리한다. 타임존 문자열이나 클라이언트 시각으로 판정하지 않는다.
+- 동일 action과 정규화 reason의 재시도만 멱등이며 반대 action, stale 상태, 동시 완료 요청은 409다.
 
 ## 결제 API
 
@@ -996,6 +1149,11 @@ POST /api/refunds/{refundId}/process
 테이블: refunds, payments, reservations, settlements, audit_logs
 ```
 
+trusted provider-result 요청은 `action: complete | fail`과 해당 action에 필요한 provider 결과 식별자
+또는 bounded 실패 코드만 받는다. 환불 status/amount/requestedBy/processedAt, 결제 status, 정산 금액,
+raw provider payload는 브라우저나 admin 입력으로 받지 않는다. 저장 refund ID와 동일 provider 결과의
+재시도만 멱등이며, 결과 교체나 반대 action은 409다. 이 계약은 실제 Toss 호출을 의미하지 않는다.
+
 상태:
 
 ```text
@@ -1007,6 +1165,8 @@ requested -> failed
 
 - 결제사 환불 성공 후 `payments.status`를 `partially_refunded` 또는 `refunded`로 갱신한다.
 - 환불 금액은 정산의 `refund_amount`에 반영한다.
+- 누적 환불액은 잠근 결제 원금 이하이고, 정산은
+  `netAmount = grossAmount - platformFeeAmount - paymentFeeAmount - refundAmount`를 만족해야 한다.
 
 ## 정산 API
 
@@ -1032,6 +1192,8 @@ GET /api/settlements
 
 - 지도자는 자신의 `coach_profile_id` 정산만 조회한다.
 - 관리자는 전체 조회 가능하다.
+- local MVP가 실행할 수 있는 정산 action은 `approve | hold`뿐이다. `paid | failed`는 향후 payout
+  provider workflow 예약 상태이며 현재 admin 또는 service-role 직접 write로도 전이하지 않는다.
 
 ### 정산 생성
 
@@ -1091,6 +1253,22 @@ POST /api/settlements/{settlementId}/hold
 pending -> hold
 ```
 
+## 찜 API
+
+### 찜 추가/삭제
+
+```http
+POST /api/favorites
+DELETE /api/favorites
+권한: User (learner)
+테이블: lesson_favorites, lessons
+```
+
+요청 body는 `{"lessonId":"uuid"}`만 허용한다. 서버는 세션의 학습자를 소유자로
+파생하고 `lessons.status = active`인 레슨만 대상으로 한다. 중복 추가와 반복 삭제는
+멱등 성공이며, 익명·타인 소유자·비활성 레슨·잘못된 ID·직접 테이블 쓰기는 거절한다.
+읽기 모델은 `/mypage/favorites`에서 소유자 범위로 재검증한다.
+
 ## 리뷰 API
 
 ### 리뷰 작성
@@ -1133,7 +1311,7 @@ GET /api/lessons/{lessonId}/reviews
 ### 리뷰 숨김
 
 ```http
-POST /api/reviews/{reviewId}/hide
+POST /api/admin/reviews/{reviewId}/hide
 권한: Admin
 테이블: reviews, audit_logs
 ```
@@ -1176,7 +1354,10 @@ POST /api/reports
 규칙:
 
 - 자기 자신을 신고할 수 없다.
-- `targetType`은 ERD의 허용 값을 따른다.
+- `targetType`은 `user | coach | lesson | review | reservation`만 허용한다. 채팅이 구현되지 않은
+  MVP에서는 `message`를 요청/DB enum 모두에서 거절한다.
+- `reason`은 trim 후 1-100자, 선택적 `detail`은 trim 후 1-1,000자다. reporter/status/reviewer/
+  reviewedAt/resolutionNote는 접수 요청에 포함할 수 없다.
 
 ### 내 신고 목록
 
@@ -1190,6 +1371,14 @@ GET /api/reports
 
 - 일반 사용자는 자신이 접수한 신고만 조회한다.
 - 관리자는 전체 신고를 조회한다.
+
+관리자 목록은 다음 별도 경로를 사용한다.
+
+```http
+GET /api/admin/reports
+권한: Admin
+테이블: reports
+```
 
 ### 차단 생성
 
@@ -1212,6 +1401,17 @@ POST /api/blocks
 
 - 자기 자신을 차단할 수 없다.
 - 중복 차단은 멱등 처리한다.
+
+### 내 차단 목록
+
+```http
+GET /api/blocks
+권한: User
+테이블: blocks
+```
+
+차단 당사자만 자신의 차단 목록을 조회하며, 차단 대상의 이메일·전화번호 등 PII는
+반환하지 않는다.
 
 ## 알림 API
 
@@ -1242,6 +1442,17 @@ POST /api/notifications/{notificationId}/read
 규칙:
 
 - 본인 알림만 읽음 처리한다.
+- 요청 body는 정확히 `{}`다. owner/readAt은 서버에서 파생하며 동일 읽음 재시도는 멱등이다.
+- `data`는 알림 type별 연결 ID/status 키만 저장한다. 허용 키는
+  `coachProfileId`, `submittedAt`, `decision`, `reservationId`, `paymentId`, `status`, `lessonId`,
+  `reportId`, `refundId`, `settlementId`의 type별 부분집합이며, 이메일·전화·주소·provider key·
+  token/cookie·raw payload 같은 키 또는 중첩 객체/배열은 거절한다.
+
+응답은 `{ data: { items, meta } }`이며 `page`는 1 이상, `pageSize`는 1-100이다. `meta.nextCursor`가
+`null`이면 다음 페이지가 없다. 목록과 읽음 처리 모두 `Cache-Control: private, no-store`를 사용한다.
+읽음 처리는 본인 알림의 `readAt`만 서버 시각으로 갱신하고 이미 읽은 동일 요청은 성공으로 처리한다.
+예약 완료/노쇼, 리뷰 요청, 신고 처리 결과, 지도자 상태, 환불 결과, 정산 상태 알림은 해당 상태
+전이 트랜잭션 안에서 한 번만 기록된다.
 
 ## 관리자 API
 
@@ -1340,7 +1551,7 @@ POST /api/admin/reports/{reportId}/resolve
 
 ```json
 {
-  "status": "resolved",
+  "action": "resolve",
   "resolutionNote": "레슨 정보를 숨김 처리했습니다."
 }
 ```
@@ -1352,6 +1563,9 @@ submitted -> reviewing
 reviewing -> resolved
 reviewing -> rejected
 ```
+
+action은 `start_review | resolve | reject`만 허용한다. reporter/status/reviewer/reviewedAt은 입력받지
+않고 활성 admin claims와 서버 시각에서 파생한다. 동일 action 재시도만 멱등이다.
 
 ### 예약 상태 관리자 변경
 
@@ -1365,7 +1579,7 @@ POST /api/admin/reservations/{reservationId}/status
 
 ```json
 {
-  "status": "cancelled_by_admin",
+  "action": "cancel",
   "reason": "서비스 장애로 인한 관리자 취소"
 }
 ```
@@ -1374,32 +1588,19 @@ POST /api/admin/reservations/{reservationId}/status
 
 - 관리자 상태 변경은 반드시 `audit_logs`에 기록한다.
 - 환불 또는 정산 영향이 있으면 연결 작업을 생성한다.
+- action은 `complete | mark_learner_no_show | mark_coach_no_show | open_dispute | cancel`만
+  허용한다. 저장 status, actor, timestamp, refund/settlement amount는 받지 않으며 기존 domain RPC의
+  잠금·권한·멱등 규칙을 그대로 사용한다.
 
-## 파일 업로드 API
+## 파일 업로드 경계
 
-### 업로드 URL 요청
-
-```http
-POST /api/storage/signed-upload-url
-권한: User
-테이블: 없음, Supabase Storage
-```
-
-요청:
-
-```json
-{
-  "bucket": "coach-certificates",
-  "path": "coach-certificates/user-id/cert.png",
-  "contentType": "image/png"
-}
-```
-
-규칙:
-
-- 허용 bucket과 path prefix를 서버에서 검증한다.
-- 자격증 파일은 본인 path에만 업로드 가능하다.
-- 업로드 후 관련 메타데이터 API를 호출해 DB 레코드를 만든다.
+- 범용 bucket/path 업로드 API는 제공하지 않는다. 레슨 이미지는 위의 레슨 전용 intent/등록
+  API만 사용하고, 지도자 자격증은 지도자 인증 전용 API 계약을 사용한다.
+- `lesson-images`는 공개 bucket이다. `ready` 메타데이터만 SPOLINK API/화면에 노출하지만,
+  한 번 발급된 public CDN URL이 삭제 직후 모든 캐시에서 회수된다고 보장하지 않는다.
+- 만료 intent와 고아 객체 정리는 `corepack pnpm lesson-images:cleanup`으로 로컬에서 멱등 실행하며
+  이미지 mutation도 제한된 기회적 cleanup을 수행한다. Hosted Supabase 예약 스케줄러와 배포는
+  후속 작업이며 현재 구현으로 기술하지 않는다.
 
 ## 상태 전이 보호 규칙
 
@@ -1448,6 +1649,38 @@ POST /api/storage/signed-upload-url
 - `approved -> failed`
 
 ## 보안 / RLS 메모
+
+## 고우선 구현 route matrix
+
+다음 route는 local MVP의 구현 및 focused contract 대상이다.
+
+```text
+PATCH /api/lessons/{lessonId}/schedules/{scheduleId}
+POST /api/lessons/{lessonId}/schedules/{scheduleId}/close
+POST|DELETE /api/favorites
+GET /api/reservations/{reservationId}/calendar
+POST /api/reservations/{reservationId}/complete
+POST /api/reservations/{reservationId}/no-show
+POST /api/admin/reviews/{reviewId}/hide
+GET /api/admin/reports
+GET|POST /api/blocks
+GET /api/notifications
+POST /api/notifications/{notificationId}/read
+POST /api/refunds/{refundId}/claim
+POST /api/refunds/{refundId}/process
+GET /api/settlements
+POST /api/settlements/generate
+POST /api/settlements/generate/{reservationId}
+POST /api/settlements/{settlementId}/approve
+POST /api/settlements/{settlementId}/hold
+GET /api/admin/reservations
+GET /api/admin/reservations/{reservationId}
+POST /api/admin/reservations/{reservationId}/status
+```
+
+각 route는 action-command만 받고 저장 상태·행위자·시각·금액은 DB workflow에서 파생한다.
+SQL contract는 해당 forward migration의 RPC/RLS/unique barrier를, API contract는
+HTTP/권한/재시도 오류를, browser contract는 관련 learner/coach/admin 화면의 상태를 검증한다.
 
 - 공개 검색 API는 `lessons.status = active`, `coach_profiles.status = approved`만 반환한다.
 - 본인 데이터 조회는 Supabase Auth uid와 `profiles.id` 일치를 기준으로 한다.

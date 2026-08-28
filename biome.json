@@ -11,13 +11,17 @@
   "files": {
     "includes": [
       "**",
+      "!.codegraph",
       "!node_modules",
       "!.next",
       "!.omo",
+      "!.supabase",
+      "!.vercel",
       "!next-env.d.ts",
       "!out",
       "!coverage",
-      "!pnpm-lock.yaml"
+      "!pnpm-lock.yaml",
+      "!supabase/.temp"
     ]
   },
   "css": {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import type { ConsoleMessage, Page, TestInfo } from "@playwright/test"
 import postgres from "postgres"
+import { isCanonicalProfileRegion } from "@/lib/profile/region-contract"
 import { readGuardedLocalStatus } from "../supabase-e2e/local-status.mjs"
 import { testEmail, testPassword } from "./auth-form-helpers"
 import { cleanupLiveAuthUser } from "./auth-recovery-helpers"
@@ -48,7 +49,7 @@ type Settled<T> =
   | Readonly<{ status: "success"; value: T }>
 
 export const signupProfileInput = {
-  defaultRegion: "서울 강남구",
+  defaultRegion: "서울특별시 강남구",
   displayName: "스포링커",
   locationAgreed: true,
   marketingAgreed: false,
@@ -61,6 +62,146 @@ export class SignupProfileAssertionError extends Error {
     super("Persisted signup profile did not match the expected contract.")
     this.name = "SignupProfileAssertionError"
   }
+}
+
+export class SignupOnboardingObservationError extends Error {
+  constructor() {
+    super("Observed onboarding behavior did not match the expected contract.")
+    this.name = "SignupOnboardingObservationError"
+  }
+}
+
+type RetainedOnboardingState = Readonly<
+  Record<"consents" | "identityFields" | "purpose" | "regionSelection", boolean>
+>
+
+type SingleOnboardingObservationSource = Readonly<{
+  readExplicitRegionSelection: () => boolean
+  readPayloads: () => readonly unknown[]
+}>
+
+export function createSingleOnboardingSubmissionReceipt(source: SingleOnboardingObservationSource) {
+  const observation = {
+    explicitRegionSelection: source.readExplicitRegionSelection(),
+    payloads: source.readPayloads(),
+  }
+  assertSingleOnboardingSubmissionObservation(observation)
+  const payload = observation.payloads[0]
+  if (!isSignupProfileInput(payload)) throw new SignupOnboardingObservationError()
+  return {
+    defaultRegion: payload.defaultRegion,
+    kind: "single-submission",
+    profileRequestCount: 1,
+    verdict: "APPROVE",
+  } as const
+}
+
+export function assertSingleOnboardingSubmissionObservation(
+  observation: Readonly<{
+    explicitRegionSelection: boolean
+    payloads: readonly unknown[]
+  }>,
+): void {
+  if (
+    !observation.explicitRegionSelection ||
+    observation.payloads.length !== 1 ||
+    !isSignupProfileInput(observation.payloads[0])
+  ) {
+    throw new SignupOnboardingObservationError()
+  }
+}
+
+export function assertRejectedRegionTextObservation(
+  observation: Readonly<{
+    profileRequestCount: number
+    searchText: string
+    selectedRegion: string | null
+  }>,
+): void {
+  if (
+    observation.searchText.length === 0 ||
+    observation.selectedRegion !== null ||
+    observation.profileRequestCount !== 0
+  ) {
+    throw new SignupOnboardingObservationError()
+  }
+}
+
+export function createRejectedRegionTextReceipt(
+  observation: Parameters<typeof assertRejectedRegionTextObservation>[0],
+) {
+  assertRejectedRegionTextObservation(observation)
+  return {
+    kind: "region-text-rejected",
+    profileRequestCount: 0,
+    verdict: "APPROVE",
+  } as const
+}
+
+export function assertOnboarding422RetryObservation(
+  observation: Readonly<{
+    firstPayload: unknown
+    persistedDefaultRegion: string | null
+    requestCount: number
+    retained: RetainedOnboardingState
+    secondPayload: unknown
+  }>,
+): void {
+  const { firstPayload, persistedDefaultRegion, requestCount, retained, secondPayload } =
+    observation
+  if (
+    requestCount !== 2 ||
+    !Object.values(retained).every(Boolean) ||
+    !isSignupProfileInput(firstPayload) ||
+    !isSignupProfileInput(secondPayload) ||
+    !sameSignupProfileInput(firstPayload, secondPayload) ||
+    persistedDefaultRegion !== secondPayload.defaultRegion
+  ) {
+    throw new SignupOnboardingObservationError()
+  }
+}
+
+export function createOnboarding422RetryReceipt(
+  observation: Parameters<typeof assertOnboarding422RetryObservation>[0],
+) {
+  assertOnboarding422RetryObservation(observation)
+  return {
+    kind: "validation-retry",
+    persistedDefaultRegion: observation.persistedDefaultRegion,
+    profileRequestCount: 2,
+    verdict: "APPROVE",
+  } as const
+}
+
+type IdentityEvidenceKind = "display-name" | "phone" | "real-name"
+type RegionEvidenceKind = "search" | "selection" | "validation"
+
+export function createOnboardingScreenshotPrivacyReceipt(
+  observation: Readonly<{
+    maskedIdentityEvidence: readonly IdentityEvidenceKind[]
+    maskedRegionEvidence: readonly RegionEvidenceKind[]
+    visibleRegionEvidence: readonly RegionEvidenceKind[]
+  }>,
+) {
+  const identities = new Set(observation.maskedIdentityEvidence)
+  const regions = new Set(observation.visibleRegionEvidence)
+  if (
+    identities.size !== 3 ||
+    !identities.has("display-name") ||
+    !identities.has("real-name") ||
+    !identities.has("phone") ||
+    observation.maskedRegionEvidence.length !== 0 ||
+    !regions.has("search") ||
+    (!regions.has("selection") && !regions.has("validation"))
+  ) {
+    throw new SignupOnboardingObservationError()
+  }
+  return {
+    kind: "screenshot-privacy",
+    maskedIdentityEvidence: [...identities].sort(),
+    visibleRegionEvidence: [...regions].sort(),
+    verdict: "APPROVE",
+  } as const
 }
 
 export class SignupCleanupError extends Error {
@@ -187,6 +328,39 @@ export async function runWithSignupCleanup<T>(
 function consentMatches(value: string | null, agreed: boolean): boolean {
   if (!agreed) return value === null
   return value !== null && !Number.isNaN(Date.parse(value))
+}
+
+const signupProfileKeys = [
+  "defaultRegion",
+  "displayName",
+  "locationAgreed",
+  "marketingAgreed",
+  "phone",
+  "realName",
+] as const satisfies readonly (keyof SignupProfileInput)[]
+
+function isSignupProfileInput(value: unknown): value is SignupProfileInput {
+  if (!isUnknownRecord(value)) return false
+  const input = value
+  return (
+    Object.keys(input).length === signupProfileKeys.length &&
+    signupProfileKeys.every((key) => key in input) &&
+    typeof input["defaultRegion"] === "string" &&
+    isCanonicalProfileRegion(input["defaultRegion"]) &&
+    typeof input["displayName"] === "string" &&
+    typeof input["locationAgreed"] === "boolean" &&
+    typeof input["marketingAgreed"] === "boolean" &&
+    typeof input["phone"] === "string" &&
+    typeof input["realName"] === "string"
+  )
+}
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+function sameSignupProfileInput(left: SignupProfileInput, right: SignupProfileInput): boolean {
+  return signupProfileKeys.every((key) => left[key] === right[key])
 }
 
 function failureName(error: unknown): string | null {

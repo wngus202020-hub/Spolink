@@ -2,6 +2,8 @@ import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import test from "node:test"
 
+import { noRuntimeApiContractFiles } from "../api-contract-inventory.mjs"
+
 const documents = {
   api: "SPOLINK_API_명세서.md",
   design: "SPOLINK_디자인_시스템.md",
@@ -38,21 +40,29 @@ test("package aggregates and owned runners include all certification contracts a
   const packageJson = JSON.parse(await readFile("package.json", "utf8"))
   const authRunner = `${await readFile("tests/auth-ui-e2e/run-coach-certification.mjs", "utf8")}\n${await readFile("tests/auth-ui-e2e/run-coach-applicant.mjs", "utf8")}`
   const supabaseRunner = await readFile("tests/supabase-e2e/task8/orchestrator.mjs", "utf8")
+  const supabaseRegisteredTests = await readFile(
+    "tests/supabase-e2e/task8/registered-tests.mjs",
+    "utf8",
+  )
 
   const apiLifecycle = await readFile("tests/auth-ui-e2e/lifecycle.mjs", "utf8")
   assert.match(packageJson.scripts["test:api"], /run-api-tests\.mjs/u)
-  assert.match(
-    packageJson.scripts["test:api:contracts"],
-    /tests\/coach-certification\/\*\.test\.mjs/u,
+  assert.equal(
+    noRuntimeApiContractFiles.some((file) => file.startsWith("tests/coach-certification/")),
+    true,
   )
-  assert.match(packageJson.scripts["test:api:contracts"], /tests\/profile-api\/\*\.test\.mjs/u)
+  assert.equal(
+    noRuntimeApiContractFiles.some((file) => file.startsWith("tests/profile-api/")),
+    true,
+  )
   assert.match(apiLifecycle, /\["pnpm", "test:api:contracts"\]/u)
   assert.match(packageJson.scripts["test:e2e:auth"], /run-coach-certification\.mjs/u)
   assert.match(authRunner, /coach-apply\.spec\.ts/u)
   assert.match(authRunner, /coach-application-status\.spec\.ts/u)
   assert.match(authRunner, /admin-coach-review\.spec\.ts/u)
   assert.match(authRunner, /SPOLINK_COACH_CERTIFICATION_INJECT_FAILURE/u)
-  assert.match(supabaseRunner, /storage-e2e\.mjs/u)
-  assert.match(supabaseRunner, /submission-e2e\.mjs/u)
-  assert.match(supabaseRunner, /admin-review-e2e\.mjs/u)
+  assert.match(supabaseRunner, /coreNodeTestFiles/u)
+  assert.match(supabaseRegisteredTests, /storage-e2e\.mjs/u)
+  assert.match(supabaseRegisteredTests, /submission-e2e\.mjs/u)
+  assert.match(supabaseRegisteredTests, /admin-review-e2e\.mjs/u)
 })

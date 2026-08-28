@@ -3,7 +3,10 @@ import type { Page } from "@playwright/test"
 import { createClient } from "@supabase/supabase-js"
 import postgres from "postgres"
 import { createRecoveryToken, RECOVERY_COOKIE, sha256HexUtf8 } from "@/lib/auth/flow-token"
-import { readGuardedLocalStatus } from "../supabase-e2e/local-status.mjs"
+import {
+  readGuardedLocalStatus,
+  readGuardedLocalStatusJson,
+} from "../../scripts/supabase-local/local-status.mjs"
 import { createLearnerCookieJar } from "../supabase-e2e/ssr-cookie-jar.mjs"
 
 type RecoveryMarker = Readonly<{
@@ -67,7 +70,7 @@ export function makeExpiredRecoveryMarker(): string {
 }
 
 export async function createLiveAuthSession(page: Page, email: string, password: string) {
-  const status = await readGuardedLocalStatus()
+  const status = await readTestSupabaseStatus()
   const serviceClient = createClient(status.apiUrl, status.serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
@@ -90,6 +93,11 @@ export async function createLiveAuthSession(page: Page, email: string, password:
   await page.context().addCookies(toPlaywrightSupabaseCookies(origin, jar.getAll()))
 
   return { claims, cookies: jar.getAll(), userId: data.user.id } satisfies LiveAuthSession
+}
+
+async function readTestSupabaseStatus() {
+  const statusJson = process.env["SPOLINK_AUTH_E2E_STATUS_JSON"]
+  return statusJson ? readGuardedLocalStatusJson(statusJson) : readGuardedLocalStatus()
 }
 
 export function toPlaywrightSupabaseCookies(

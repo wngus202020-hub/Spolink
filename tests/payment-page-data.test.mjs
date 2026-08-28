@@ -1,11 +1,20 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { classifyPaymentPageState, readPaymentPageData } from "../lib/payments/payment-page-data.ts"
+import {
+  foundSnapshot,
+  learnerId,
+  now,
+  paymentSnapshot,
+  reservationId,
+} from "./payment-page-data-fixtures.mjs"
+import { installPaymentPageModuleResolver } from "./payment-page-module-resolver.mjs"
 
-const now = new Date("2026-08-01T00:00:00.000Z")
-const reservationId = "00000000-0000-4000-8000-000000000401"
-const learnerId = "00000000-0000-4000-8000-000000000001"
+installPaymentPageModuleResolver()
+
+const { classifyPaymentPageState, readPaymentPageData } = await import(
+  "../lib/payments/payment-page-data.ts"
+)
 
 test("payment page classifier covers pending, ready, confirmed, terminal, and unavailable states", () => {
   assert.equal(classifyPaymentPageState(foundSnapshot(), now), "pending_valid")
@@ -71,6 +80,32 @@ test("payment page classifier gives expiration precedence over an existing ready
 test("payment page classifier preserves not-found and read-failure states", () => {
   assert.equal(classifyPaymentPageState({ kind: "not_found" }, now), "not_found")
   assert.equal(classifyPaymentPageState({ kind: "read_failure" }, now), "read_failure")
+})
+
+test("Given inconsistent confirmation pairs, when payment state is classified, then only confirmed and paid is confirmed", () => {
+  // Given
+  const strictSuccess = foundSnapshot({
+    payment: paymentSnapshot({ status: "paid" }),
+    reservation: { status: "confirmed" },
+  })
+  const inconsistentPairs = [
+    foundSnapshot({ reservation: { status: "confirmed" } }),
+    foundSnapshot({
+      payment: paymentSnapshot(),
+      reservation: { status: "confirmed" },
+    }),
+    foundSnapshot({
+      payment: paymentSnapshot({ status: "failed" }),
+      reservation: { status: "confirmed" },
+    }),
+    foundSnapshot({ payment: paymentSnapshot({ status: "paid" }) }),
+  ]
+
+  // When / Then
+  assert.equal(classifyPaymentPageState(strictSuccess, now), "confirmed")
+  for (const snapshot of inconsistentPairs) {
+    assert.equal(classifyPaymentPageState(snapshot, now), "unavailable")
+  }
 })
 
 test("payment page reader passes reservation and learner ids and returns display-safe ready data", async () => {
@@ -162,51 +197,3 @@ test("payment page reader suppresses ready identifiers outside the ready state",
   assert.equal(terminal.state, "terminal")
   assert.equal(terminal.viewModel.readyPayment, null)
 })
-
-function foundSnapshot(overrides = {}) {
-  const reservationOverrides = overrides.reservation ?? {}
-  const snapshot = {
-    kind: "found",
-    lesson: {
-      address: "서울 강남구 테헤란로 1",
-      cancellationPolicySummary: "수업 24시간 전까지 70% 환불",
-      id: "00000000-0000-4000-8000-000000000101",
-      placeName: "강남 테니스장",
-      region: "서울 강남구",
-      title: "입문 테니스 레슨",
-    },
-    payment: null,
-    reservation: {
-      id: reservationId,
-      learnerId,
-      lessonId: "00000000-0000-4000-8000-000000000101",
-      lessonScheduleId: "00000000-0000-4000-8000-000000000301",
-      paymentExpiresAt: "2026-08-01T00:10:00.000Z",
-      reservedPriceAmount: 50_000,
-      status: "pending_payment",
-      ...reservationOverrides,
-    },
-    schedule: {
-      endsAt: "2026-08-03T02:00:00.000Z",
-      id: "00000000-0000-4000-8000-000000000301",
-      startsAt: "2026-08-03T01:00:00.000Z",
-    },
-  }
-
-  return {
-    ...snapshot,
-    ...overrides,
-    reservation: snapshot.reservation,
-  }
-}
-
-function paymentSnapshot(overrides = {}) {
-  return {
-    amount: 50_000,
-    id: "00000000-0000-4000-8000-000000000501",
-    provider: "toss",
-    providerOrderId: `spolink_${reservationId}`,
-    status: "ready",
-    ...overrides,
-  }
-}

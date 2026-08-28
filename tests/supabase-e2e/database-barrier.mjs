@@ -91,7 +91,9 @@ async function waitForBlocked(sql, { baselinePids, lockerPid, workers }) {
       .map((row) => ({ chain: findOwnedBlockerChain(row, candidateMap, lockerPid), row }))
       .filter((candidate) => candidate.chain !== null)
     const matches = workers.map((worker) => {
-      const found = owned.filter(({ row }) => matchesWorkerIdentity(row, worker))
+      const found = owned.filter(
+        ({ row }) => !worker.excludePids?.includes(row.pid) && matchesWorkerIdentity(row, worker),
+      )
       if (found.length > 1) {
         throw new Error(`Observed ${found.length} candidates for worker ${worker.label}`)
       }

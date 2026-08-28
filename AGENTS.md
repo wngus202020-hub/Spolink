@@ -1,16 +1,16 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-08-14
-**Commit:** not a git repository
-**Branch:** not a git repository
+**Generated:** 2026-08-27
+**Commit:** d4eb83a (working tree snapshot includes uncommitted files)
+**Branch:** main
 
 ## OVERVIEW
 
 SPOLINK is a Korean sports lesson marketplace built with Next.js 16, React 19,
 TypeScript, Tailwind CSS v4, and a local Supabase MVP backend. The current runnable
-surface includes lesson discovery, auth and recovery, profile onboarding, booking,
-coach certification application/review, payment preparation/confirmation contracts,
-reservation history/cancellation, and My Page reads.
+surface includes lesson discovery/authoring, auth and recovery, profile onboarding/editing,
+booking and payment, reservation lifecycle/completion/calendar, favorites, reviews,
+notifications, trust-safety, coach certification, money states, and admin/coach operations.
 
 Root Markdown files define product policy and contracts. `app/`, `components/`, `lib/`,
 `scripts/`, `supabase/`, and `tests/` are the implementation and verification surface.
@@ -47,28 +47,31 @@ Read the nearest child `AGENTS.md` before changing files in these areas: `app/`,
 | Local backend lifecycle | `scripts/supabase-local.mjs` | Guarded Docker/Supabase ownership |
 | Test entry points | `package.json`, `tests/` | Contract, browser, DB, and evidence suites |
 
+For conflicts, migrations/RLS/RPCs and typed HTTP workflows govern transactional behavior;
+service policy governs business intent, while the screen document is the UI projection.
+
 ## CODE MAP
 
-| Symbol | Type | Location | Role |
-|--------|------|----------|------|
-| `RootLayout` | layout | `app/layout.tsx` | Korean metadata and global shell |
-| `HomePage` | page | `app/page.tsx` | Public discovery entry |
-| `LessonsPage` | page | `app/lessons/page.tsx` | Region, sport, and KST date search |
-| `readPageAuthProfile` | auth boundary | `lib/auth/page-auth.ts` | Shared page account-state redirects |
-| `PublicHeader` | layout component | `components/layout/public-header.tsx` | Public/authenticated navigation |
-| `LessonSearchPicker` | client component | `components/lessons/lesson-search-picker.tsx` | Desktop controls and mobile dialog state |
-| `createGetCurrentProfileRouteHandler` | route factory | `lib/profile/route-handlers.ts` | Profile HTTP security and validation |
-| `runCreateReservationWorkflow` | workflow | `lib/reservations/create-reservation-api.ts` | Pending reservation RPC boundary |
-| `handleCancelReservation` | route adapter | `lib/reservations/cancel-reservation-route-adapter.ts` | Atomic cancellation entry |
-| `runConfirmPaymentWorkflow` | workflow | `lib/payments/confirm-payment-api.ts` | Toss verification and reconciliation |
-| `createSupabaseServerClient` | infrastructure | `lib/supabase/server.ts` | Cookie-aware and service-role clients |
-| `run` | E2E orchestrator | `tests/supabase-e2e/run.mjs` | Guarded live Supabase verification |
+| Symbol | Type | Location | Refs | Role |
+|--------|------|----------|-----:|------|
+| `RootLayout` | layout | `app/layout.tsx` | - | Korean metadata and global shell |
+| `HomePage` | page | `app/page.tsx` | - | Public discovery and auth-aware entry |
+| `readPageAuthProfile` | auth boundary | `lib/auth/page-auth.ts` | 41 | Shared page account-state redirects |
+| `createGetCurrentProfileRouteHandler` | route factory | `lib/profile/route-handlers.ts` | - | Profile HTTP security and validation |
+| `runCreateReservationWorkflow` | workflow | `lib/reservations/create-reservation-api.ts` | 3 | Pending reservation RPC boundary |
+| `handleCancelReservation` | route adapter | `lib/reservations/cancel-reservation-route-adapter.ts` | - | Atomic cancellation entry |
+| `runConfirmPaymentWorkflow` | workflow | `lib/payments/confirm-payment-api.ts` | - | Toss verification and reconciliation |
+| `createSupabaseServerClient` | infrastructure | `lib/supabase/server.ts` | 27 | Cookie-aware request client |
+| `createSupabaseServiceClient` | infrastructure | `lib/supabase/server.ts` | 11 | Server-only privileged client |
+| `runTodo8` | E2E orchestrator | `tests/supabase-e2e/task8/orchestrator.mjs` | - | Guarded live Supabase verification |
 
 ## CURRENT BOUNDARY
 
 - Backend confidence is local-only Supabase Auth/PostgreSQL/RLS/RPC/API/E2E.
-- Hosted Supabase, production deployment, actual Toss refund execution, maps, chat, push,
-  and public favorite mutation remain deferred.
+- Authenticated favorites, reviews, in-app notifications, trust-safety, lesson authoring,
+  reservation completion/calendar, internal refund reconciliation, and settlement states exist.
+- Hosted Supabase, production deployment, actual Toss refund execution, payout, maps, chat, push,
+  and Realtime delivery remain deferred.
 - Coach certification upload, submission, admin review, and private signed certificate reads are
   implemented against local Supabase; full payout-account storage remains deferred.
 - Internal cancellation creates a refund request. Provider refund execution belongs to a later
@@ -78,9 +81,10 @@ Read the nearest child `AGENTS.md` before changing files in these areas: `app/`,
 ## CONVENTIONS
 
 - Use Korean product terminology and preserve `SPOLINK` casing in product prose.
+- Use `coach` in code/DB identifiers but `지도자` in user-facing Korean copy.
 - Use `corepack pnpm`; the repository is pinned to `pnpm@10.25.0`.
 - TypeScript is strict with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`.
-- Biome uses 2 spaces, 100 columns, double quotes, and omitted semicolons.
+- Biome uses 2 spaces, 100 columns, double quotes, and semicolons only as needed.
 - Keep Route Handlers thin: parse and authorize at the boundary, then call typed `lib/` workflows.
 - Keep service policy, ERD, API, screen, and UI documents aligned when transactional states change.
 - UI uses semantic CSS variables from `app/globals.css` and Lucide icons.
@@ -97,7 +101,7 @@ Read the nearest child `AGENTS.md` before changing files in these areas: `app/`,
   current official documentation.
 - Do not add raw hex colors, arbitrary typography/spacing, a second icon family, or default
   shadcn styling outside the design system.
-- Do not treat `.omo/evidence/`, `.playwright-mcp/`, `.next/`, or `.codegraph/` as source.
+- Do not treat `.omo/`, `.playwright-mcp/`, `.next/`, `.codegraph/`, or `node_modules/` as source.
 
 ## COMMANDS
 
@@ -108,31 +112,34 @@ corepack pnpm dev:local           # local Supabase + http://127.0.0.1:3000
 corepack pnpm typecheck
 corepack pnpm lint
 corepack pnpm build
-corepack pnpm test:api
 corepack pnpm test:api:contracts
+corepack pnpm test:api:live
+corepack pnpm test:money-operations:live
 corepack pnpm test:coach-certification
+corepack pnpm test:high-priority:contracts
 corepack pnpm test:e2e:auth
 corepack pnpm test:e2e:payment
+corepack pnpm test:e2e:profile-edit
 corepack pnpm test:e2e:reservations
 corepack pnpm supabase:doctor
 corepack pnpm test:e2e:supabase
 corepack pnpm supabase:assert-stopped
 ```
 
-`corepack pnpm dev:local` is the local-auth development entrypoint. It requires the fixed
-`127.0.0.1:3000` port and exits with an error instead of selecting another port when 3000 is
-occupied. If it starts a fresh guarded Supabase runtime, stopping the launcher also stops that
-runtime. If it reuses an already-valid guarded Supabase runtime, stopping the launcher frees only
-port 3000; finish that runtime explicitly with `corepack pnpm supabase:stop` and then
-`corepack pnpm supabase:assert-stopped`.
+`dev:local` requires the fixed `127.0.0.1:3000` port. A fresh guarded Supabase runtime stops with
+the launcher; a reused runtime must be stopped explicitly with `supabase:stop`, followed by
+`supabase:assert-stopped`.
 
 `corepack pnpm format` writes files. Supabase suites require Docker and own their lifecycle. These
 commands describe local development only; they do not configure hosted Supabase or production.
 
 ## NOTES
 
-- This directory has no Git metadata, hosted deployment, or CI workflow.
-- `next-env.d.ts` is generated; avoid incidental changes.
+- This is a Git worktree on `main` and is often intentionally dirty; never reset unrelated changes.
+- There is no hosted deployment or CI workflow in this repository.
+- Treat `SPOLINK_기획서_개선안.md` and `SPOLINK_개발_문서_구성.md` as historical planning,
+  not as current implementation contracts.
+- `next-env.d.ts` and `lib/lesson-regions.ts` are generated; avoid incidental manual changes.
 - The highest-risk changes span reservation, payment, cancellation, refund, settlement, coach
   certification review, and eligibility. Verify the complete chain, not only the touched UI or route.
 - Coach certification changes must cover applicant draft/certificate storage, atomic submission,

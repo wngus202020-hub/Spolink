@@ -1,11 +1,13 @@
 import { z } from "zod"
 
+import { canonicalProfileRegionSchema } from "./region-contract"
+
 const phonePattern = /^01[016789]-[0-9]{3,4}-[0-9]{4}$/
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const avatarSegmentPattern = /^[A-Za-z0-9._-]+$/
 
 const createProfileSchema = z.strictObject({
-  defaultRegion: trimmedString(2, 80),
+  defaultRegion: canonicalProfileRegionSchema,
   displayName: trimmedString(2, 30),
   locationAgreed: z.boolean(),
   marketingAgreed: z.boolean(),
@@ -16,7 +18,7 @@ const createProfileSchema = z.strictObject({
 const patchProfileSchema = z
   .strictObject({
     avatarPath: z.union([z.string().trim().refine(isValidAvatarPathShape), z.null()]).optional(),
-    defaultRegion: z.union([trimmedString(2, 80), z.null()]).optional(),
+    defaultRegion: z.union([canonicalProfileRegionSchema, z.null()]).optional(),
     displayName: trimmedString(2, 30).optional(),
     locationAgreed: z.boolean().optional(),
     marketingAgreed: z.boolean().optional(),

@@ -12,8 +12,11 @@ Supabase E2E, lifecycle safety tests, and staging/evidence security gates.
 | `*.test.mjs` | `node:test` API, workflow, source, read-model, and SQL contracts |
 | `profile-api/` | Validation, route precedence, workflow, repository boundaries |
 | `auth-ui-e2e/` | Playwright auth and browser commerce flows; see child guide |
+| `lesson-images/` | Image route, Storage, idempotency, browser, and evidence suites; see child guide |
+| `mypage-profile-edit-docs-contract.test.mjs` | Source/docs contract for the profile-edit screen and Todo7 evidence claims |
 | `supabase-e2e/` | Live Auth/RLS/cancellation/concurrency/evidence; see child guide |
-| `supabase-local-guard/` | Process, Docker, receipt, lock, and cleanup safety |
+| `high-priority-missing-services/` | High-priority contract runner and Task 3 evidence package; see child guide |
+| `supabase-local-guard/` | Process, Docker, receipt, lock, and cleanup safety; see child guide |
 | `staging-contract/` | Provider checklist, forbidden commands, redaction contracts |
 | `fixtures/regions/` | Immutable official region snapshot and checksum |
 
@@ -37,9 +40,13 @@ Supabase E2E, lifecycle safety tests, and staging/evidence security gates.
 ```bash
 corepack pnpm test:api
 corepack pnpm test:api:contracts
+corepack pnpm test:api:live
+corepack pnpm test:money-operations:live
+corepack pnpm test:high-priority:contracts
 corepack pnpm test:coach-certification
 corepack pnpm test:e2e:auth
 corepack pnpm test:e2e:payment
+corepack pnpm test:e2e:profile-edit
 corepack pnpm test:e2e:reservations
 corepack pnpm test:e2e:supabase
 corepack pnpm test:e2e:supabase:deps
@@ -49,3 +56,8 @@ corepack pnpm staging:contract:test
 
 Use the smallest focused runner first. Full Supabase suites require Docker and must finish with
 `corepack pnpm supabase:assert-stopped`.
+
+`test:api:contracts` is the deterministic no-runtime contract inventory. `test:api:live` (and the
+legacy aggregate name `test:api`) owns guarded local Supabase, a selected loopback Next server, the
+17 payment/reservation HTTP boundary tests, and the serial live profile lifecycle.
+`test:money-operations:live` owns the guarded local Supabase concurrency scenario separately.

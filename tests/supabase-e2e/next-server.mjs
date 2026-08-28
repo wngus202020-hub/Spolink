@@ -1,8 +1,13 @@
 import { spawn } from "node:child_process"
-import { readdir } from "node:fs/promises"
+import { mkdtemp, readdir, realpath, rm, symlink } from "node:fs/promises"
 import net from "node:net"
+import os from "node:os"
+import path from "node:path"
 
-import { readRuntimeReceipt, writeRuntimeReceipt } from "../../scripts/supabase-local/receipt.mjs"
+import {
+  maybeReadRuntimeReceipt,
+  writeRuntimeReceipt,
+} from "../../scripts/supabase-local/receipt.mjs"
 import { assertNextTypeState, restoreNextDevRouteReference } from "./next-type-stability.mjs"
 
 const envFilesLoadedByNext = new Set([
@@ -52,11 +57,12 @@ export async function startNextServer({ mode, status, repoRoot = process.cwd() }
   }
 
   const port = await selectNextPort(3006)
+  const tempRoot = await createIsolatedNextWorkspace(repoRoot)
   const env = buildNextEnv({ mode, status })
   const child = spawn(
     "corepack",
     ["pnpm", "exec", "next", "dev", "--webpack", "--hostname", "127.0.0.1", "--port", String(port)],
-    { cwd: repoRoot, env, shell: false, stdio: ["ignore", "pipe", "pipe"] },
+    { cwd: tempRoot, env, shell: false, stdio: ["ignore", "pipe", "pipe"] },
   )
   const output = { stderr: "", stdout: "" }
   child.stdout.on("data", (chunk) => {
@@ -70,11 +76,58 @@ export async function startNextServer({ mode, status, repoRoot = process.cwd() }
     mode,
     ownedPid: child.pid,
     port,
-    stop: () => stopOwnedChild(child, port, output),
+    tempRoot,
+    stop: async () => {
+      const result = await stopOwnedChild(child, port, output)
+      await removeIsolatedNextWorkspace(tempRoot)
+      return { ...result, tempRemoved: true }
+    },
   }
-  await recordOwnedNext(repoRoot, server)
-  await waitForConfiguredState(server.baseUrl, mode === "configured", output)
-  return server
+  try {
+    await recordOwnedNext(repoRoot, server)
+    await waitForConfiguredState(server.baseUrl, mode === "configured", output)
+    return server
+  } catch (error) {
+    await stopOwnedChild(child, port, output).catch(() => {})
+    await removeIsolatedNextWorkspace(tempRoot).catch(() => {})
+    throw error
+  }
+}
+
+async function createIsolatedNextWorkspace(repoRoot) {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "spolink-task8-next-"))
+  const result = await runBuffered("rsync", [
+    "-a",
+    "--exclude=.git",
+    "--exclude=.next",
+    "--exclude=.omo",
+    "--exclude=.codegraph",
+    "--exclude=.playwright-mcp",
+    "--exclude=.supabase",
+    "--exclude=node_modules",
+    "--exclude=supabase/.temp",
+    "--exclude=.env*",
+    `${repoRoot}/`,
+    `${tempRoot}/`,
+  ])
+  if (result.exitCode !== 0) {
+    await removeIsolatedNextWorkspace(tempRoot)
+    throw new Error("Isolated Next workspace copy failed")
+  }
+  await symlink(path.join(repoRoot, "node_modules"), path.join(tempRoot, "node_modules"), "dir")
+  return tempRoot
+}
+
+async function removeIsolatedNextWorkspace(tempRoot) {
+  const resolved = await realpath(tempRoot)
+  const tempPrefix = `${await realpath(os.tmpdir())}${path.sep}`
+  if (
+    !resolved.startsWith(tempPrefix) ||
+    !path.basename(resolved).startsWith("spolink-task8-next-")
+  ) {
+    throw new Error("Refusing to remove an unowned Next workspace")
+  }
+  await rm(resolved, { force: true, recursive: true })
 }
 
 function buildNextEnv({ mode, status }) {
@@ -176,9 +229,10 @@ async function waitForPortFree(port) {
   throw new Error(`Next E2E port ${port} was not released`)
 }
 
-async function recordOwnedNext(repoRoot, server) {
+export async function recordOwnedNext(repoRoot, server) {
   const receiptPath = `${repoRoot}/.omo/evidence/runtime-receipt-supabase-auth-rls-e2e.json`
-  const receipt = await readRuntimeReceipt(receiptPath)
+  const receipt = await maybeReadRuntimeReceipt(receiptPath)
+  if (!receipt) return
   await writeRuntimeReceipt(receiptPath, {
     ...receipt,
     ownedPids: uniqueNumbers([...receipt.ownedPids, server.ownedPid]),

@@ -1,7 +1,4 @@
 import assert from "node:assert/strict"
-import { access, mkdtemp, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import path from "node:path"
 import process from "node:process"
 import test from "node:test"
 
@@ -116,20 +113,41 @@ test("direct trigger, bounded timeout, and process-group descendant kill", async
     "$omo:start-work .omo/plans/supabase-auth-rls-e2e.md",
   )
   assert.throws(() => assertDirectTrigger("automatic continuation"), /direct.*start-work/i)
-  const dir = await mkdtemp(path.join(tmpdir(), "spolink-guard-"))
-  const markerPath = path.join(dir, "descendant-survived")
+  let descendantPid
   try {
-    const script = `const {spawn}=require("node:child_process");spawn(process.execPath,["-e",${JSON.stringify(`setTimeout(()=>require("node:fs").writeFileSync(${JSON.stringify(markerPath)},"bad"),200)`)}],{stdio:"ignore"});setInterval(()=>{},1000)`
+    const descendant = `process.on("SIGTERM",()=>{});process.stdout.write("ready");setInterval(()=>{},1000)`
+    const script = `const {spawn}=require("node:child_process");const child=spawn(process.execPath,["-e",${JSON.stringify(descendant)}],{stdio:["ignore","pipe","ignore"]});child.stdout.once("data",()=>{process.stdout.write(String(child.pid));setInterval(()=>{},1000)})`
     const result = await runSpawn({
       command: process.execPath,
       args: ["-e", script],
       options: { shell: false, env: baseEnv },
-      timeoutMs: 25,
+      timeoutMs: 1_000,
     })
     assert.equal(result.exitCode, 124)
-    await new Promise((resolve) => setTimeout(resolve, 350))
-    await assert.rejects(access(markerPath), /ENOENT/)
+    descendantPid = Number(result.stdout)
+    assert.equal(Number.isInteger(descendantPid), true)
+    assert.equal(isProcessAlive(descendantPid), false)
   } finally {
-    await rm(dir, { recursive: true, force: true })
+    if (descendantPid && isProcessAlive(descendantPid)) process.kill(descendantPid, "SIGKILL")
   }
 })
+
+test("runSpawn success path returns without timeout cleanup", async () => {
+  const result = await runSpawn({
+    command: process.execPath,
+    args: ["-e", "process.stdout.write('ok')"],
+    options: { shell: false, env: baseEnv },
+    timeoutMs: 1_000,
+  })
+
+  assert.deepEqual(result, { exitCode: 0, stdout: "ok", stderr: "" })
+})
+
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}

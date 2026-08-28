@@ -1,8 +1,12 @@
 import { spawn } from "node:child_process"
+import { constants as osConstants } from "node:os"
 import process from "node:process"
+import { fileURLToPath } from "node:url"
 
 import { createDockerEnv, createSupabaseSealedEnv } from "./env.mjs"
-import { signalProcessGroup } from "./utils.mjs"
+import { createOutputTail } from "./output-redaction.mjs"
+
+const supervisorPath = fileURLToPath(new URL("./spawn-supervisor.mjs", import.meta.url))
 
 export function buildDockerSpawn(args, { env = process.env } = {}) {
   return {
@@ -22,6 +26,7 @@ export function buildSupabaseSpawn(args, { repoRoot = process.cwd(), env = proce
       shell: false,
       env: createSupabaseSealedEnv(env),
     },
+    preserveStdoutOnSuccess: isStatusJsonCommand(args),
     timeoutMs: 180_000,
   }
 }
@@ -34,39 +39,103 @@ export async function runRequired(spawnRunner, spec) {
   return result
 }
 
-export async function runSpawn(spec) {
+export function runSpawn(spec) {
+  if (process.platform === "win32") {
+    return Promise.reject(new Error("Persistent spawn supervision requires POSIX process groups"))
+  }
+  if (spec.options?.shell !== false) {
+    return Promise.reject(new Error("Supervised commands require shell: false"))
+  }
   return new Promise((resolve, reject) => {
-    const child = spawn(spec.command, spec.args, { ...spec.options, detached: true })
-    let stdout = ""
-    let stderr = ""
+    const stdout = createOutputTail({
+      preserveOperationalOutput: spec.preserveStdoutOnSuccess === true,
+    })
+    const stderr = createOutputTail()
+    const child = spawn(process.execPath, [supervisorPath, "--", spec.command, ...spec.args], {
+      ...spec.options,
+      detached: true,
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+    })
     let timedOut = false
+    let settled = false
+    let termTimer
     let killTimer
-    const timeout = setTimeout(() => {
-      timedOut = true
-      signalProcessGroup(child, "SIGTERM")
-      killTimer = setTimeout(() => signalProcessGroup(child, "SIGKILL"), 2_000)
-      killTimer.unref()
-    }, spec.timeoutMs ?? 180_000)
+    const timeout = setTimeout(beginTimeout, spec.timeoutMs ?? 180_000)
     timeout.unref()
-    child.stdout?.on("data", (chunk) => {
-      stdout += chunk
-    })
-    child.stderr?.on("data", (chunk) => {
-      stderr += chunk
-    })
-    child.once("error", (error) => {
-      clearTimeout(timeout)
-      clearTimeout(killTimer)
-      if (error.code === "ENOENT") {
-        resolve({ exitCode: 127, stdout, stderr: error.message })
-        return
+    child.stdout?.on("data", stdout.append)
+    child.stderr?.on("data", stderr.append)
+    child.once("error", finishError)
+    child.once("close", finishClose)
+
+    function beginTimeout() {
+      timedOut = true
+      if (!signalGroup("SIGTERM")) return
+      termTimer = setTimeout(() => {
+        if (!signalGroup("SIGKILL")) return
+        killTimer = setTimeout(
+          () => finishError(new Error("Supervisor did not exit after SIGKILL")),
+          500,
+        )
+        killTimer.unref()
+      }, 2_000)
+      termTimer.unref()
+    }
+
+    function signalGroup(signal) {
+      if (!isChildIdentityAlive(child)) return false
+      try {
+        process.kill(-child.pid, signal)
+        return true
+      } catch (error) {
+        if (error?.code === "ESRCH") return false
+        finishError(error)
+        return false
       }
+    }
+
+    function finishClose(code, signal) {
+      if (settled) return
+      settled = true
+      clearTimers()
+      const exitCode = timedOut ? 124 : (code ?? signalExitCode(signal))
+      const result = {
+        exitCode,
+        stdout: stdout.value(spec.preserveStdoutOnSuccess === true && exitCode === 0),
+        stderr: stderr.value(),
+      }
+      if (!timedOut && signal) result.signal = signal
+      resolve(result)
+    }
+
+    function finishError(error) {
+      if (settled) return
+      settled = true
+      clearTimers()
       reject(error)
-    })
-    child.once("close", (exitCode) => {
+    }
+
+    function clearTimers() {
       clearTimeout(timeout)
+      clearTimeout(termTimer)
       clearTimeout(killTimer)
-      resolve({ exitCode: timedOut ? 124 : (exitCode ?? 1), stdout, stderr })
-    })
+      child.stdout?.off("data", stdout.append)
+      child.stderr?.off("data", stderr.append)
+      child.removeListener("error", finishError)
+      child.removeListener("close", finishClose)
+    }
   })
+}
+
+function isChildIdentityAlive(child) {
+  return Boolean(child.pid && child.exitCode === null && child.signalCode === null)
+}
+
+function signalExitCode(signal) {
+  return signal ? 128 + (osConstants.signals[signal] ?? 0) : 1
+}
+
+function isStatusJsonCommand(args) {
+  if (args[0] !== "status") return false
+  return args.some((arg, index) => ["-o", "--output"].includes(arg) && args[index + 1] === "json")
 }

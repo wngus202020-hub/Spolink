@@ -10,9 +10,10 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { LessonCardMedia } from "@/components/home/lesson-card-media"
+import { LessonFavoriteControl } from "@/components/favorites/lesson-favorite-control"
 import { PublicHeader } from "@/components/layout/public-header"
 import { LessonBookingPanel } from "@/components/lessons/lesson-booking-panel"
+import { LessonDetailGallery } from "@/components/lessons/lesson-detail-gallery"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { readPageAuthProfile } from "@/lib/auth/page-auth"
 import {
@@ -44,6 +45,11 @@ export default async function LessonDetailPage({ params }: LessonDetailPageProps
     notFound()
   }
 
+  const lessonImages =
+    lesson.media.kind === "photo"
+      ? (lesson.media.images ?? [{ sortOrder: 0, url: lesson.media.src }])
+      : []
+
   return (
     <main className="min-h-[100dvh]">
       <PublicHeader auth={auth} />
@@ -59,13 +65,7 @@ export default async function LessonDetailPage({ params }: LessonDetailPageProps
           </Link>
 
           <div className="grid gap-5">
-            <LessonCardMedia
-              media={lesson.media}
-              priority={true}
-              sizes="(min-width: 1024px) 70vw, 100vw"
-              surface="detail"
-              title={lesson.title}
-            />
+            <LessonDetailGallery images={lessonImages} title={lesson.title} />
 
             <div className="grid gap-4">
               <div className="flex flex-wrap items-center gap-2">
@@ -76,7 +76,7 @@ export default async function LessonDetailPage({ params }: LessonDetailPageProps
               </div>
 
               <div className="grid gap-3">
-                <h1 className="m-0 text-[34px] font-bold leading-[1.18] text-primary md:text-5xl md:leading-[1.14]">
+                <h1 className="m-0 text-balance text-[34px] font-bold leading-[1.18] text-primary md:text-5xl md:leading-[1.14]">
                   {lesson.title}
                 </h1>
                 <p className="m-0 max-w-[68ch] text-base leading-[1.7] text-secondary md:text-lg">
@@ -172,7 +172,12 @@ export default async function LessonDetailPage({ params }: LessonDetailPageProps
           </section>
         </div>
 
-        <LessonBookingPanel lesson={lesson} />
+        <div className="grid gap-3">
+          {auth.kind === "ready" && auth.profile.role === "learner" ? (
+            <LessonFavoriteControl lessonId={lesson.id} />
+          ) : null}
+          <LessonBookingPanel lesson={lesson} />
+        </div>
       </section>
     </main>
   )

@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises"
+import { constants, open, readFile } from "node:fs/promises"
 import path from "node:path"
 import process from "node:process"
 
@@ -15,11 +15,42 @@ export async function readJsonFile(filePath) {
 }
 
 export async function readMode0600JsonFile(filePath, modeError) {
-  const fileStat = await stat(filePath)
-  if ((fileStat.mode & 0o777) !== 0o600) {
-    throw new Error(modeError)
+  let fileHandle
+  let primaryError
+  let closeError
+  let parsedValue
+  try {
+    try {
+      fileHandle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW)
+    } catch (error) {
+      if (error?.code === "ELOOP") {
+        throw new Error(modeError)
+      }
+      throw error
+    }
+    const fileStat = await fileHandle.stat()
+    if (!fileStat.isFile() || (fileStat.mode & 0o777) !== 0o600) {
+      throw new Error(modeError)
+    }
+    parsedValue = JSON.parse(await fileHandle.readFile("utf8"))
+  } catch (error) {
+    primaryError = error
+    throw error
+  } finally {
+    if (fileHandle) {
+      try {
+        await fileHandle.close()
+      } catch (error) {
+        if (!primaryError) {
+          closeError = error
+        }
+      }
+    }
   }
-  return readJsonFile(filePath)
+  if (closeError) {
+    throw closeError
+  }
+  return parsedValue
 }
 
 export function assertExactKeys(value, expectedKeys, label) {

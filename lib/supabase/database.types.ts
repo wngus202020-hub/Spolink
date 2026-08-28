@@ -34,6 +34,8 @@ type UserStatus = "active" | "pending_coach" | "coach_approved" | "suspended" | 
 type UserRole = "learner" | "coach" | "admin"
 type CoachStatus = "draft" | "submitted" | "approved" | "rejected" | "suspended"
 type LessonStatus = "draft" | "pending_review" | "active" | "paused" | "closed" | "rejected"
+type LessonImageLifecycleState = "deleting" | "ready"
+type LessonImageUploadIntentStatus = "cancelled" | "claimed" | "cleaned" | "pending" | "registered"
 type ReservationStatus =
   | "pending_payment"
   | "confirmed"
@@ -50,6 +52,28 @@ type ReviewStatus = "visible" | "hidden" | "deleted"
 type ReportStatus = "submitted" | "reviewing" | "resolved" | "rejected"
 type RefundStatus = "requested" | "approved" | "failed" | "completed"
 type RefundSource = "manual" | "payment_confirmation_reconciliation" | "reservation_cancellation"
+type LessonStatusAction = "approve" | "close" | "pause" | "reject" | "resume" | "submit"
+type ReservationStatusAction =
+  | "cancel"
+  | "complete"
+  | "mark_coach_no_show"
+  | "mark_learner_no_show"
+  | "open_dispute"
+type ReportStatusAction = "reject" | "resolve" | "start_review"
+type SettlementStatusAction = "approve" | "hold"
+type RefundResultAction = "complete" | "fail"
+type ReportTargetType = "coach" | "lesson" | "reservation" | "review" | "user"
+type NotificationType =
+  | "coach_certification.reviewed"
+  | "coach_certification.submitted"
+  | "refund.result"
+  | "report.resolved"
+  | "reservation.completed"
+  | "reservation.no_show"
+  | "reservation_cancelled"
+  | "reservation_confirmed"
+  | "review.requested"
+  | "settlement.status_changed"
 
 type ProfilesRow = BaseTimestamps &
   Readonly<{
@@ -145,9 +169,44 @@ type LessonImagesRow = Readonly<{
   file_path: string
   id: Uuid
   lesson_id: Uuid
+  lifecycle_state: LessonImageLifecycleState
   sort_order: number
 }>
 type LessonImagesInsert = InsertShape<LessonImagesRow, "file_path" | "lesson_id">
+
+type LessonImageDeletionReceiptsRow = Readonly<{
+  coach_profile_id: Uuid
+  created_at: Timestamp
+  file_path: string
+  image_id: Uuid
+  lesson_id: Uuid
+  user_id: Uuid
+}>
+type LessonImageDeletionReceiptsInsert = InsertShape<
+  LessonImageDeletionReceiptsRow,
+  "coach_profile_id" | "file_path" | "image_id" | "lesson_id" | "user_id"
+>
+
+type LessonImageUploadIntentsRow = BaseTimestamps &
+  Readonly<{
+    claim_token: Uuid | null
+    claimed_at: Timestamp | null
+    coach_profile_id: Uuid
+    completed_at: Timestamp | null
+    expires_at: Timestamp
+    id: Uuid
+    lesson_id: Uuid
+    mime_type: "image/jpeg" | "image/png" | "image/webp"
+    object_name: string
+    registered_image_id: Uuid | null
+    size_bytes: number
+    status: LessonImageUploadIntentStatus
+    user_id: Uuid
+  }>
+type LessonImageUploadIntentsInsert = InsertShape<
+  LessonImageUploadIntentsRow,
+  "coach_profile_id" | "lesson_id" | "mime_type" | "object_name" | "size_bytes" | "user_id"
+>
 
 type LessonSchedulesRow = BaseTimestamps &
   Readonly<{
@@ -208,6 +267,11 @@ type PaymentsInsert = InsertShape<
 type RefundsRow = BaseTimestamps &
   Readonly<{
     amount: number
+    claim_attempt: number
+    claim_expires_at: Timestamp | null
+    claim_idempotency_key: string | null
+    claim_token: Uuid | null
+    claimed_at: Timestamp | null
     id: Uuid
     payment_id: Uuid
     processed_at: Timestamp | null
@@ -215,9 +279,11 @@ type RefundsRow = BaseTimestamps &
     raw_payload: Json | null
     reason: string
     requested_by: Uuid
+    result_fingerprint: string | null
     reservation_id: Uuid
     source: RefundSource
     status: RefundStatus
+    last_failure_code: string | null
   }>
 type RefundsInsert = InsertShape<
   RefundsRow,
@@ -281,7 +347,7 @@ type ReportsRow = BaseTimestamps &
     reviewed_by: Uuid | null
     status: ReportStatus
     target_id: Uuid
-    target_type: "coach" | "lesson" | "message" | "reservation" | "review" | "user"
+    target_type: ReportTargetType
   }>
 type ReportsInsert = InsertShape<ReportsRow, "reason" | "reporter_id" | "target_id" | "target_type">
 
@@ -298,10 +364,11 @@ type NotificationsRow = Readonly<{
   body: string | null
   created_at: Timestamp
   data: Json | null
+  event_key: string | null
   id: Uuid
   read_at: Timestamp | null
   title: string
-  type: string
+  type: NotificationType
   user_id: Uuid
 }>
 type NotificationsInsert = InsertShape<NotificationsRow, "title" | "type" | "user_id">
@@ -338,12 +405,19 @@ export type Database = Readonly<{
     CompositeTypes: Record<string, never>
     Enums: {
       coach_status: CoachStatus
+      lesson_status_action: LessonStatusAction
       lesson_status: LessonStatus
+      notification_type: NotificationType
       payment_status: PaymentStatus
+      refund_result_action: RefundResultAction
       refund_status: RefundStatus
+      report_status_action: ReportStatusAction
       report_status: ReportStatus
+      report_target_type: ReportTargetType
+      reservation_status_action: ReservationStatusAction
       reservation_status: ReservationStatus
       review_status: ReviewStatus
+      settlement_status_action: SettlementStatusAction
       settlement_status: SettlementStatus
       user_role: UserRole
       user_status: UserStatus
@@ -386,6 +460,39 @@ export type Database = Readonly<{
         },
         number
       >
+      claim_refund: Rpc<
+        { checked_idempotency_key: string; checked_refund_id: Uuid },
+        readonly Readonly<{
+          attempt: number
+          claim_token: Uuid
+          idempotent: boolean
+          refund_id: Uuid
+          status: RefundStatus
+        }>[]
+      >
+      process_refund_result: Rpc<
+        {
+          checked_action: RefundResultAction
+          checked_claim_token?: Uuid | null
+          checked_failure_code?: string | null
+          checked_provider_refund_key?: string | null
+          checked_raw_payload?: Json | null
+          checked_refund_id: Uuid
+        },
+        readonly Readonly<{ idempotent: boolean; refund_id: Uuid; status: RefundStatus }>[]
+      >
+      generate_settlement: Rpc<
+        { checked_reservation_id: Uuid },
+        readonly Readonly<{ idempotent: boolean; settlement_id: Uuid; status: SettlementStatus }>[]
+      >
+      set_settlement_status: Rpc<
+        {
+          checked_action: SettlementStatusAction
+          checked_hold_reason?: string | null
+          checked_settlement_id: Uuid
+        },
+        readonly Readonly<{ idempotent: boolean; settlement_id: Uuid; status: SettlementStatus }>[]
+      >
       cancel_reservation: Rpc<
         {
           checked_reason: string
@@ -398,6 +505,58 @@ export type Database = Readonly<{
           refund_status: RefundStatus | null
           reservation_id: Uuid
           reservation_status: ReservationStatus
+        }>[]
+      >
+      transition_reservation: Rpc<
+        {
+          checked_action: ReservationStatusAction
+          checked_reason?: string | null
+          checked_reservation_id: Uuid
+        },
+        readonly Readonly<{
+          cancelled_at: Timestamp | null
+          refund_amount: number | null
+          refund_id: Uuid | null
+          refund_status: RefundStatus | null
+          reservation_id: Uuid
+          reservation_status: ReservationStatus
+        }>[]
+      >
+      transition_reservation_lifecycle: Rpc<
+        {
+          checked_action: ReservationStatusAction
+          checked_reason?: string | null
+          checked_reservation_id: Uuid
+        },
+        readonly Readonly<{
+          cancelled_at: Timestamp | null
+          completed_at: Timestamp | null
+          no_show_marked_at: Timestamp | null
+          refund_amount: number | null
+          refund_id: Uuid | null
+          refund_status: RefundStatus | null
+          reservation_id: Uuid
+          reservation_status: ReservationStatus
+          settlement_id: Uuid | null
+        }>[]
+      >
+      transition_admin_reservation: Rpc<
+        {
+          checked_action: ReservationStatusAction
+          checked_reason?: string | null
+          checked_reservation_id: Uuid
+        },
+        readonly Readonly<{
+          cancelled_at: Timestamp | null
+          completed_at: Timestamp | null
+          idempotent: boolean
+          no_show_marked_at: Timestamp | null
+          refund_amount: number | null
+          refund_id: Uuid | null
+          refund_status: RefundStatus | null
+          reservation_id: Uuid
+          reservation_status: ReservationStatus
+          settlement_id: Uuid | null
         }>[]
       >
       confirm_paid_reservation: Rpc<
@@ -451,6 +610,58 @@ export type Database = Readonly<{
         },
         ReservationsRow
       >
+      create_lesson_image_upload_intent: Rpc<
+        {
+          checked_lesson_id: Uuid
+          checked_mime_type: string
+          checked_size_bytes: number
+        },
+        readonly LessonImageUploadIntentsRow[]
+      >
+      cancel_lesson_image_upload_intent: Rpc<
+        {
+          checked_intent_id: Uuid
+          checked_lesson_id: Uuid
+          checked_object_name: string
+        },
+        readonly LessonImageUploadIntentsRow[]
+      >
+      register_validated_lesson_image: Rpc<
+        { checked_actor_id: Uuid; checked_intent_id: Uuid; checked_object_name: string },
+        readonly LessonImagesRow[]
+      >
+      reorder_lesson_images: Rpc<
+        {
+          checked_expected_image_ids: readonly Uuid[]
+          checked_lesson_id: Uuid
+          checked_ordered_image_ids: readonly Uuid[]
+        },
+        readonly LessonImagesRow[]
+      >
+      begin_delete_lesson_image: Rpc<
+        {
+          checked_expected_image_ids: readonly Uuid[]
+          checked_image_id: Uuid
+          checked_lesson_id: Uuid
+        },
+        readonly Readonly<{ file_path: string }>[]
+      >
+      finalize_delete_lesson_image: Rpc<
+        { checked_image_id: Uuid; checked_lesson_id: Uuid },
+        readonly LessonImagesRow[]
+      >
+      claim_expired_lesson_image_upload_intents: Rpc<
+        { checked_limit?: number },
+        readonly LessonImageUploadIntentsRow[]
+      >
+      finalize_lesson_image_upload_intent_cleanup: Rpc<
+        {
+          checked_claim_token: Uuid
+          checked_cleaned: boolean
+          checked_intent_id: Uuid
+        },
+        readonly LessonImageUploadIntentsRow[]
+      >
       issue_password_recovery_grant: Rpc<
         {
           checked_expires_at: Timestamp
@@ -467,12 +678,51 @@ export type Database = Readonly<{
         },
         boolean
       >
+      create_review: Rpc<
+        { checked_content: string; checked_rating: number; checked_reservation_id: Uuid },
+        Readonly<{
+          content: string | null
+          created_at: Timestamp
+          idempotent: boolean
+          lesson_id: Uuid
+          rating: number
+          reservation_id: Uuid
+          review_id: Uuid
+        }>[]
+      >
       can_view_reservation: Rpc<{ reservation_id: Uuid }, boolean>
       current_user_role: Rpc<NoArgs, UserRole | null>
       is_admin: Rpc<NoArgs, boolean>
+      is_approved_coach: Rpc<{ checked_coach_profile_id: Uuid }, boolean>
+      hide_review: Rpc<
+        { checked_reason?: string; checked_review_id: Uuid },
+        Readonly<{
+          hidden_reason: string | null
+          idempotent: boolean
+          review_id: Uuid
+          status: ReviewStatus
+        }>[]
+      >
       lesson_is_public: Rpc<{ checked_lesson_id: Uuid }, boolean>
+      no_show_wait_interval: Rpc<NoArgs, string>
+      notification_data_is_safe: Rpc<
+        { checked_data: Json; checked_type: NotificationType },
+        boolean
+      >
+      emit_notification_once: Rpc<
+        {
+          checked_body?: string | null
+          checked_data: Json
+          checked_event_key: string
+          checked_title: string
+          checked_type: NotificationType
+          checked_user_id: Uuid
+        },
+        Readonly<{ idempotent: boolean; notification_id: Uuid }>[]
+      >
       owns_coach_profile: Rpc<{ coach_profile_id: Uuid }, boolean>
       owns_lesson: Rpc<{ lesson_id: Uuid }, boolean>
+      reservation_no_show_available_at: Rpc<{ checked_starts_at: Timestamp }, Timestamp>
       review_coach_application: Rpc<
         {
           checked_coach_profile_id: Uuid
@@ -492,7 +742,8 @@ export type Database = Readonly<{
       protect_lesson_review_status: Rpc<NoArgs, unknown>
       protect_notification_read_update: Rpc<NoArgs, unknown>
       protect_profile_system_fields: Rpc<NoArgs, unknown>
-      protect_schedule_reserved_count: Rpc<NoArgs, unknown>
+      protect_reservation_transition_fields: Rpc<NoArgs, unknown>
+      protect_schedule_transition_fields: Rpc<NoArgs, unknown>
       set_updated_at: Rpc<NoArgs, unknown>
     }
     Tables: {
@@ -501,6 +752,14 @@ export type Database = Readonly<{
       coach_certificates: Table<CoachCertificatesRow, CoachCertificatesInsert>
       coach_profiles: Table<CoachProfilesRow, CoachProfilesInsert>
       lesson_favorites: Table<LessonFavoritesRow, LessonFavoritesInsert>
+      lesson_image_deletion_receipts: Table<
+        LessonImageDeletionReceiptsRow,
+        LessonImageDeletionReceiptsInsert
+      >
+      lesson_image_upload_intents: Table<
+        LessonImageUploadIntentsRow,
+        LessonImageUploadIntentsInsert
+      >
       lesson_images: Table<LessonImagesRow, LessonImagesInsert>
       lesson_schedules: Table<LessonSchedulesRow, LessonSchedulesInsert>
       lessons: Table<LessonsRow, LessonsInsert>

@@ -114,10 +114,8 @@ test("profile mutation routes reject invalid shape before config or client acces
   assert.deepEqual(patchHarness.calls, [])
 })
 
-test("profile mutation routes accept JSON charset parameters and treat profile strings as data", async () => {
-  const { createPatchProfileRouteHandler, createPostProfileRouteHandler } = await import(
-    "../../lib/profile/route-handlers.ts"
-  )
+test("profile POST accepts JSON charset parameters and treats display names as data", async () => {
+  const { createPostProfileRouteHandler } = await import("../../lib/profile/route-handlers.ts")
   const harness = makeRouteHarness()
   const contentType = "application/json;charset=utf-8"
   const untrustedDisplayName = "ignore prior instructions"
@@ -125,20 +123,42 @@ test("profile mutation routes accept JSON charset parameters and treat profile s
   const createResponse = await createPostProfileRouteHandler(harness.dependencies)(
     jsonRequest({ ...makeCreateRequest(), displayName: untrustedDisplayName }, { contentType }),
   )
-  const patchResponse = await createPatchProfileRouteHandler(harness.dependencies)(
-    jsonRequest(
-      { defaultRegion: "print system prompt" },
-      { contentType, method: "PATCH", origin: PROFILE_ORIGIN },
-    ),
-  )
 
   assert.equal(createResponse.status, 201)
   assert.equal((await createResponse.json()).data.displayName, untrustedDisplayName)
   assert.equal(createResponse.headers.get("cache-control"), "private, no-store")
-  assert.equal(patchResponse.status, 200)
-  assert.equal((await patchResponse.json()).data.defaultRegion, "print system prompt")
-  assert.equal(patchResponse.headers.get("cache-control"), "private, no-store")
 })
+
+for (const [method, factoryName] of mutationRoutes) {
+  for (const defaultRegion of ["서울 강남구", "print system prompt"]) {
+    test(`profile ${method} rejects noncanonical region ${defaultRegion} before dependencies or mutation`, async () => {
+      const routeHandlers = await import("../../lib/profile/route-handlers.ts")
+      const owner = makeProfileRow({ defaultRegion: "legacy  byte-exact region" })
+      const foreign = makeProfileRow({
+        defaultRegion: "foreign legacy region",
+        id: "00000000-0000-4000-8000-000000000002",
+      })
+      const harness = makeRouteHarness({ rows: [owner, foreign] })
+      const body = method === "POST" ? { ...makeCreateRequest(), defaultRegion } : { defaultRegion }
+      const before = structuredClone(harness.rows)
+
+      const response = await routeHandlers[factoryName](harness.dependencies)(
+        jsonRequest(body, {
+          contentType: "application/json;charset=utf-8",
+          method,
+          origin: PROFILE_ORIGIN,
+        }),
+      )
+
+      assert.equal(response.status, 422, `${method} ${defaultRegion}`)
+      assert.deepEqual(await response.json(), validationError("Invalid profile request."))
+      assert.equal(response.headers.get("cache-control"), "private, no-store")
+      assert.deepEqual(harness.calls, [])
+      assert.equal(harness.mutationCount, 0)
+      assert.deepEqual(harness.rows, before)
+    })
+  }
+}
 
 test("profile mutation routes map not-configured before client creation", async () => {
   const { createPostProfileRouteHandler } = await import("../../lib/profile/route-handlers.ts")
@@ -202,6 +222,34 @@ test("profile mutation routes patch the verified claims owner and preserve conse
   assert.equal(body.data.displayName, "새이름")
   assert.equal(body.data.locationAgreedAt, "2026-07-19T00:00:00.000Z")
   assert.equal(body.data.marketingAgreedAt, null)
+})
+
+test("profile PATCH clears a canonical region with null", async () => {
+  const { createPatchProfileRouteHandler } = await import("../../lib/profile/route-handlers.ts")
+  const harness = makeRouteHarness({ rows: [makeProfileRow()] })
+
+  const response = await createPatchProfileRouteHandler(harness.dependencies)(
+    jsonRequest({ defaultRegion: null }, { method: "PATCH" }),
+  )
+
+  assert.equal(response.status, 200)
+  assert.equal((await response.json()).data.defaultRegion, null)
+  assert.equal(harness.rows[0]?.default_region, null)
+  assert.equal(harness.mutationCount, 1)
+})
+
+test("profile PATCH omitting defaultRegion preserves a byte-exact legacy region", async () => {
+  const { createPatchProfileRouteHandler } = await import("../../lib/profile/route-handlers.ts")
+  const legacyRegion = "legacy  byte-exact region"
+  const harness = makeRouteHarness({ rows: [makeProfileRow({ defaultRegion: legacyRegion })] })
+
+  const response = await createPatchProfileRouteHandler(harness.dependencies)(
+    jsonRequest({ displayName: "새이름" }, { method: "PATCH" }),
+  )
+
+  assert.equal(response.status, 200)
+  assert.equal((await response.json()).data.defaultRegion, legacyRegion)
+  assert.equal(harness.rows[0]?.default_region, legacyRegion)
 })
 
 test("profile mutation routes stop restricted profiles before mutation", async () => {

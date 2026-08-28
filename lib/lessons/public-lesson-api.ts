@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import type { Lesson, LessonMedia } from "@/lib/home-data"
+import type { Lesson, LessonMedia, LessonMediaImage } from "@/lib/home-data"
 import { includesFilter } from "@/lib/lesson-search"
 import {
   buildLessonReviewsResponse,
@@ -125,14 +125,12 @@ export function buildLessonListResponse(
 }
 
 export function buildLessonDetailResponse(lesson: Lesson): LessonDetailResponse {
-  const photoUrl = getLessonPhotoUrl(lesson.media)
-
   return {
     data: {
       ...mapLessonListItem(lesson),
       cancellationPolicySummary: lesson.refundSummary,
       description: lesson.detailBullets.join("\n"),
-      images: photoUrl ? [{ sortOrder: 0, url: photoUrl }] : [],
+      images: getLessonImageItems(lesson.media),
       placeName: lesson.venueText,
       preparation: lesson.preparationText,
       reviews: buildLessonReviewsResponse(lesson).data,
@@ -183,6 +181,17 @@ function getLessonPhotoUrl(media: LessonMedia): string | null {
       return media.src
     case "missing":
       return null
+    default:
+      return media satisfies never
+  }
+}
+
+function getLessonImageItems(media: LessonMedia): readonly LessonMediaImage[] {
+  switch (media.kind) {
+    case "photo":
+      return media.images ?? [{ sortOrder: 0, url: media.src }]
+    case "missing":
+      return []
     default:
       return media satisfies never
   }

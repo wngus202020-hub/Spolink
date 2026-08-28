@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server"
 
+import { lessonAuthoringRouteDependencies } from "@/lib/lessons/authoring-default-dependencies"
+import { createCreateScheduleRouteHandler } from "@/lib/lessons/authoring-route-handlers"
 import { getActiveLessonByIdForDisplay } from "@/lib/lessons/display-lessons"
 import {
   buildLessonSchedulesResponse,
@@ -31,3 +33,5 @@ export async function GET(request: Request, { params }: LessonSchedulesRouteCont
 
   return NextResponse.json(buildLessonSchedulesResponse(lesson, parsedQuery.query))
 }
+
+export const POST = createCreateScheduleRouteHandler(lessonAuthoringRouteDependencies)

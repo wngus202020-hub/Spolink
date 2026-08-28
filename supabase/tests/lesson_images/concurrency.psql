@@ -1,0 +1,81 @@
+select pg_temp.set_image_actor('81000000-0000-4000-8000-000000000001');
+set local role authenticated;
+
+create temporary table submit_intent on commit drop as
+select * from public.create_lesson_image_upload_intent(
+  '84000000-0000-4000-8000-000000000007','image/jpeg',100
+);
+select throws_ok(format('select public.transition_lesson(%L,%L,%L,null)',
+  '84000000-0000-4000-8000-000000000007','submit',
+  (select updated_at from public.lessons where id = '84000000-0000-4000-8000-000000000007')
+), 'P0001', 'IMAGE_OPERATION_PENDING', 'submit blocks on active intent');
+
+create temporary table deleting_submit on commit drop as
+select * from public.begin_delete_lesson_image(
+  '84000000-0000-4000-8000-000000000008','85000000-0000-4000-8000-000000000081',
+  array['85000000-0000-4000-8000-000000000081']::uuid[]
+);
+select throws_ok(format('select public.transition_lesson(%L,%L,%L,null)',
+  '84000000-0000-4000-8000-000000000008','submit',
+  (select updated_at from public.lessons where id = '84000000-0000-4000-8000-000000000008')
+), 'P0001', 'IMAGE_OPERATION_PENDING', 'submit blocks on deleting image');
+create temporary table cleanup_intent on commit drop as
+select * from public.create_lesson_image_upload_intent(
+  '84000000-0000-4000-8000-000000000001','image/jpeg',100
+);
+reset role;
+
+update public.lesson_image_upload_intents
+set expires_at = statement_timestamp() - interval '1 second'
+where id = (select id from cleanup_intent);
+create temporary table claimed on commit drop as
+select * from public.claim_expired_lesson_image_upload_intents(1);
+select is((select status from claimed), 'claimed', 'cleanup claims expiry');
+select ok((select claim_token is not null from claimed), 'cleanup claim has token');
+update public.lesson_image_upload_intents
+set claimed_at = statement_timestamp() - interval '6 minutes'
+where id = (select id from claimed);
+create temporary table reclaimed_after_interrupt on commit drop as
+select * from public.claim_expired_lesson_image_upload_intents(1);
+select isnt(
+  (select claim_token from reclaimed_after_interrupt),
+  (select claim_token from claimed),
+  'abandoned cleanup claim is resumed with a new CAS token'
+);
+create temporary table resumed on commit drop as
+select * from public.finalize_lesson_image_upload_intent_cleanup(
+  (select id from reclaimed_after_interrupt),
+  (select claim_token from reclaimed_after_interrupt),
+  false
+);
+select is((select status from resumed), 'pending', 'failed cleanup becomes claimable');
+create temporary table reclaimed on commit drop as
+select * from public.claim_expired_lesson_image_upload_intents(1);
+create temporary table cleaned on commit drop as
+select * from public.finalize_lesson_image_upload_intent_cleanup(
+  (select id from reclaimed), (select claim_token from reclaimed), true
+);
+select is((select status from cleaned), 'cleaned', 'resumed cleanup reaches final state');
+select is((select status from public.finalize_lesson_image_upload_intent_cleanup(
+  (select id from reclaimed), (select claim_token from reclaimed), true
+)), 'cleaned', 'cleanup finalize retry is idempotent');
+select throws_ok(format(
+  'select public.finalize_lesson_image_upload_intent_cleanup(%L,%L,true)',
+  (select id from reclaimed), gen_random_uuid()
+), 'P0001', 'STALE_IMAGE_INTENT_CLAIM', 'wrong claim token is stale');
+select throws_ok(format(
+  'select public.finalize_lesson_image_upload_intent_cleanup(%L,%L,null)',
+  (select id from reclaimed), (select claim_token from reclaimed)
+), 'P0001', 'VALIDATION_ERROR', 'nullable cleanup outcome is rejected');
+
+select throws_ok(
+  $$insert into public.lesson_images (lesson_id,file_path,sort_order)
+    values ('84000000-0000-4000-8000-000000000001','caller/chosen.jpg',0)$$,
+  '23514', null, 'canonical constraint rejects caller path'
+);
+select throws_ok(
+  $$insert into public.lesson_images (lesson_id,file_path,sort_order)
+    values ('84000000-0000-4000-8000-000000000001',
+    '84000000-0000-4000-8000-000000000001/86000000-0000-4000-8000-000000000099.jpg',5)$$,
+  '23514', null, 'sort constraint rejects sixth position'
+);

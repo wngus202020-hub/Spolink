@@ -4,7 +4,7 @@ import test from "node:test"
 
 import { importFreshNextConfig } from "./redirect-proxy-test-helpers.mjs"
 
-test("configured lesson pages declare private no-store at the Next route header boundary", async () => {
+test("configured auth-dependent pages declare private no-store at the Next route header boundary", async () => {
   const { default: nextConfig } = await importFreshNextConfig({
     NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon-key",
     NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
@@ -21,6 +21,10 @@ test("configured lesson pages declare private no-store at the Next route header 
     {
       headers: [{ key: "Cache-Control", value: "private, no-store" }],
       source: "/lessons/:path*",
+    },
+    {
+      headers: [{ key: "Cache-Control", value: "private, no-store" }],
+      source: "/coach/apply/status",
     },
   ])
 })

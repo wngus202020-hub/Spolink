@@ -1,17 +1,18 @@
 "use client"
 
-import { CalendarDays, ChevronLeft, MapPin, Search, Trophy } from "lucide-react"
-import { useEffect, useId, useRef, useState } from "react"
+import { CalendarDays, MapPin, Search, Trophy } from "lucide-react"
+import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react"
+import { LessonSearchFilterContent } from "@/components/lessons/lesson-search-filter-content"
 import {
-  ChoiceButton,
-  LessonSearchFilterContent,
-} from "@/components/lessons/lesson-search-filter-content"
+  RegionSearchPanel,
+  SportSearchPanel,
+} from "@/components/lessons/lesson-search-option-panels"
 import { LessonSearchSheet } from "@/components/lessons/lesson-search-sheet"
 import { LessonSearchSummary } from "@/components/lessons/lesson-search-summary"
 import type { LessonRegion } from "@/lib/lesson-regions"
 import { lessonRegions } from "@/lib/lesson-regions"
 import type { FilterState } from "@/lib/lesson-search"
-import { allRegionsFilterValue, defaultFilterValues, sportFilters } from "@/lib/lesson-search"
+import { defaultFilterValues } from "@/lib/lesson-search"
 
 export type ActivePanel = "region" | "sport" | "date"
 
@@ -20,6 +21,12 @@ type LessonSearchPickerProps = Readonly<{
   submitLabel: string
   variant: "home" | "lessons"
 }>
+
+const mobilePanels = [
+  ["region", "지역", MapPin],
+  ["sport", "종목", Trophy],
+  ["date", "일정", CalendarDays],
+] as const
 
 export function LessonSearchPicker({
   initialFilters,
@@ -59,85 +66,40 @@ export function LessonSearchPicker({
     setSelectedCategory(findRegionCategory(defaultFilterValues.region))
     setActivePanel("region")
   }
+  const moveMobileTab = (event: KeyboardEvent<HTMLButtonElement>, panel: ActivePanel) => {
+    const currentIndex = mobilePanels.findIndex(([candidate]) => candidate === panel)
+    const nextIndex = {
+      ArrowLeft: (currentIndex - 1 + mobilePanels.length) % mobilePanels.length,
+      ArrowRight: (currentIndex + 1) % mobilePanels.length,
+      End: mobilePanels.length - 1,
+      Home: 0,
+    }[event.key]
+    if (nextIndex === undefined) return
 
-  const regionContent = (
-    <>
-      {activePanel === "region" ? (
-        selectedCategory ? (
-          <div className="grid gap-3">
-            <button
-              aria-label="시·도 목록으로 돌아가기"
-              className="inline-flex min-h-11 w-fit items-center gap-2 rounded-[var(--radius-md)] px-3 text-sm font-bold text-secondary hover:bg-inset"
-              onClick={() => setSelectedCategory(null)}
-              type="button"
-            >
-              <ChevronLeft aria-hidden="true" className="size-4" strokeWidth={1.8} />
-              시·도 다시 선택
-            </button>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:max-h-[19rem] md:overflow-y-auto md:overscroll-contain md:pr-1 lg:grid-cols-4">
-              <ChoiceButton
-                isSelected={editingFilters.region === selectedCategory.queryValue}
-                label={`${selectedCategory.label} 전체`}
-                onSelect={() =>
-                  updateFilters({ ...editingFilters, region: selectedCategory.queryValue })
-                }
-              />
-              {selectedCategory.districts.map((district) => (
-                <ChoiceButton
-                  isSelected={editingFilters.region === district.queryValue}
-                  key={district.code}
-                  label={district.label}
-                  onSelect={() => updateFilters({ ...editingFilters, region: district.queryValue })}
-                />
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-            <ChoiceButton
-              isSelected={editingFilters.region === allRegionsFilterValue}
-              label={allRegionsFilterValue}
-              onSelect={() => {
-                setSelectedCategory(null)
-                updateFilters({ ...editingFilters, region: allRegionsFilterValue })
-              }}
-            />
-            {lessonRegions.map((category) => (
-              <ChoiceButton
-                isSelected={editingFilters.region.startsWith(category.queryValue)}
-                key={category.sourceCode}
-                label={category.label}
-                onSelect={() => {
-                  setSelectedCategory(category)
-                  updateFilters({ ...editingFilters, region: category.queryValue })
-                }}
-              />
-            ))}
-          </div>
-        )
-      ) : null}
-    </>
-  )
+    const nextPanel = mobilePanels[nextIndex]?.[0]
+    if (!nextPanel) return
+    event.preventDefault()
+    setActivePanel(nextPanel)
+    requestAnimationFrame(() => document.getElementById(`${panelId}-${nextPanel}-tab`)?.focus())
+  }
 
-  const sportContent = (
-    <>
-      {activePanel === "sport" ? (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-          {sportFilters.map((option) => {
-            const optionValue = option === "전체" ? "" : option
-            return (
-              <ChoiceButton
-                isSelected={editingFilters.sport === optionValue}
-                key={option}
-                label={option}
-                onSelect={() => updateFilters({ ...editingFilters, sport: optionValue })}
-              />
-            )
-          })}
-        </div>
-      ) : null}
-    </>
-  )
+  const regionContent =
+    activePanel === "region" ? (
+      <RegionSearchPanel
+        onCategoryChange={setSelectedCategory}
+        onSelect={(region) => updateFilters({ ...editingFilters, region })}
+        selectedCategory={selectedCategory}
+        selectedValue={editingFilters.region}
+      />
+    ) : null
+
+  const sportContent =
+    activePanel === "sport" ? (
+      <SportSearchPanel
+        onSelect={(sport) => updateFilters({ ...editingFilters, sport })}
+        selectedValue={editingFilters.sport}
+      />
+    ) : null
 
   const dateContent = (
     <>
@@ -219,23 +181,21 @@ export function LessonSearchPicker({
           className="grid grid-cols-3 gap-1 rounded-[var(--radius-pill)] bg-inset p-1"
           role="tablist"
         >
-          {(
-            [
-              ["region", "지역", MapPin],
-              ["sport", "종목", Trophy],
-              ["date", "일정", CalendarDays],
-            ] as const
-          ).map(([panel, label, Icon]) => (
+          {mobilePanels.map(([panel, label, Icon]) => (
             <button
+              aria-controls={`${panelId}-${panel}-tabpanel`}
               aria-selected={activePanel === panel}
               className={[
                 "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[var(--radius-pill)] px-3 text-sm font-bold",
                 activePanel === panel ? "bg-canvas text-primary" : "text-secondary",
               ].join(" ")}
               data-dialog-initial-focus={panel === "region" ? "true" : undefined}
+              id={`${panelId}-${panel}-tab`}
               key={panel}
               onClick={() => setActivePanel(panel)}
+              onKeyDown={(event) => moveMobileTab(event, panel)}
               role="tab"
+              tabIndex={activePanel === panel ? 0 : -1}
               type="button"
             >
               <Icon aria-hidden="true" className="size-4 text-accent" strokeWidth={1.8} />
@@ -243,7 +203,15 @@ export function LessonSearchPicker({
             </button>
           ))}
         </div>
-        {filterContent}
+        {activePanel ? (
+          <div
+            aria-labelledby={`${panelId}-${activePanel}-tab`}
+            id={`${panelId}-${activePanel}-tabpanel`}
+            role="tabpanel"
+          >
+            {filterContent}
+          </div>
+        ) : null}
       </LessonSearchSheet>
     </form>
   )

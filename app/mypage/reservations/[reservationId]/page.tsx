@@ -119,7 +119,10 @@ function ReservationDetails({ reservation }: Readonly<{ reservation: Reservation
             </dl>
           </section>
 
-          <section className="grid gap-4 rounded-[var(--radius-xl)] border border-line bg-subtle p-5 md:p-6">
+          <section
+            className="grid gap-4 rounded-[var(--radius-xl)] border border-line bg-subtle p-5 md:p-6"
+            id="cancellation-refund"
+          >
             <div className="inline-flex items-center gap-2">
               <ShieldCheck aria-hidden="true" className="size-5 text-accent" strokeWidth={1.8} />
               <h2 className="m-0 text-[24px] font-bold leading-[1.3] text-primary">
@@ -184,6 +187,24 @@ function ReservationDetails({ reservation }: Readonly<{ reservation: Reservation
               현재 상태에서는 결제를 계속할 수 없어요.
             </p>
           )}
+
+          {reservation.status.label === "수업 완료" ? (
+            <Link
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[var(--radius-md)] border border-line bg-canvas px-5 py-3 text-sm font-bold text-primary hover:bg-inset"
+              href={`/mypage/reviews/new?reservationId=${reservation.id}`}
+            >
+              후기 남기기
+              <ArrowRight aria-hidden="true" className="size-4" strokeWidth={1.8} />
+            </Link>
+          ) : null}
+
+          <Link
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[var(--radius-md)] border border-line bg-canvas px-5 py-3 text-sm font-bold text-primary hover:bg-inset"
+            href={`/mypage/trust-safety?targetType=reservation&targetId=${reservation.id}`}
+          >
+            예약 신고하기
+            <ArrowRight aria-hidden="true" className="size-4" strokeWidth={1.8} />
+          </Link>
 
           <div className="inline-flex items-start gap-2 text-sm leading-[1.6] text-secondary">
             <CreditCard

@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  Bell,
   CalendarDays,
   Heart,
   MapPin,
@@ -89,12 +90,31 @@ export default async function MyPage() {
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <article className="grid min-h-48 content-between gap-5 rounded-[var(--radius-xl)] border border-line bg-subtle p-5 md:p-6">
-              <div className="flex items-start justify-between gap-4">
+            <Link
+              aria-label="알림 목록으로 이동"
+              className="group grid min-h-48 content-between gap-5 rounded-[var(--radius-xl)] border border-line bg-canvas p-5 hover:bg-subtle md:p-6"
+              href="/mypage/notifications"
+            >
+              <span className="inline-flex size-12 items-center justify-center rounded-[var(--radius-lg)] bg-accent-soft text-primary">
+                <Bell aria-hidden="true" className="size-6" strokeWidth={1.8} />
+              </span>
+              <span className="grid gap-3">
+                <strong className="text-[22px] font-bold leading-[1.36] text-primary">알림</strong>
+                <span className="inline-flex min-h-11 w-fit items-center gap-2 text-sm font-bold text-primary">
+                  알림 보기
+                  <ArrowRight aria-hidden="true" className="size-4" strokeWidth={1.8} />
+                </span>
+              </span>
+            </Link>
+            <Link
+              aria-label="내 정보 수정으로 이동"
+              className="group grid min-h-48 content-between gap-5 rounded-[var(--radius-xl)] border border-line bg-canvas p-5 hover:bg-subtle md:p-6"
+              href="/mypage/profile"
+            >
+              <div className="flex items-start gap-4">
                 <span className="inline-flex size-12 items-center justify-center rounded-[var(--radius-lg)] bg-inset text-primary">
                   <UserRoundCog aria-hidden="true" className="size-6" strokeWidth={1.8} />
                 </span>
-                <StatusBadge tone="neutral">준비중</StatusBadge>
               </div>
               <div className="grid gap-1">
                 <h3 className="m-0 text-[22px] font-bold leading-[1.36] text-primary">내 정보</h3>
@@ -102,7 +122,7 @@ export default async function MyPage() {
                   표시 이름과 기본 지역을 확인하고 관리해요.
                 </p>
               </div>
-            </article>
+            </Link>
 
             <Link
               aria-label="내 예약 관리로 이동"
@@ -147,6 +167,30 @@ export default async function MyPage() {
                 </span>
                 <span className="inline-flex min-h-11 w-fit items-center gap-2 text-sm font-bold text-primary">
                   찜 목록 보기
+                  <ArrowRight aria-hidden="true" className="size-4" strokeWidth={1.8} />
+                </span>
+              </span>
+            </Link>
+
+            <Link
+              aria-label="신고와 차단 관리로 이동"
+              className="group grid min-h-48 content-between gap-5 rounded-[var(--radius-xl)] border border-line bg-canvas p-5 hover:bg-subtle md:p-6"
+              href="/mypage/trust-safety"
+            >
+              <span className="inline-flex size-12 items-center justify-center rounded-[var(--radius-lg)] bg-accent-soft text-primary">
+                <ShieldCheck aria-hidden="true" className="size-6" strokeWidth={1.8} />
+              </span>
+              <span className="grid gap-3">
+                <span className="grid gap-1">
+                  <strong className="text-[22px] font-bold leading-[1.36] text-primary">
+                    신고와 차단
+                  </strong>
+                  <span className="text-sm leading-[1.6] text-secondary">
+                    이용 중 확인이 필요한 내용을 접수하고 관리해요.
+                  </span>
+                </span>
+                <span className="inline-flex min-h-11 w-fit items-center gap-2 text-sm font-bold text-primary">
+                  안전 관리
                   <ArrowRight aria-hidden="true" className="size-4" strokeWidth={1.8} />
                 </span>
               </span>

@@ -29,6 +29,7 @@ export async function cleanupFixtureGraph(sql, serviceClient, authUsers = null) 
     } else {
       await tx`delete from public.audit_logs where target_id in ${tx(predicates.auditTargetIds)}`
     }
+    await tx`delete from public.settlements where reservation_id in ${tx(fixedReservationIds())}`
     await tx`delete from public.payments where id in ${tx(fixedPaymentIds())} or reservation_id in ${tx(fixedReservationIds())}`
     await tx`delete from public.reservations where id in ${tx(fixedReservationIds())}`
     await tx`delete from public.lesson_schedules where id in ${tx(fixedScheduleIds())}`

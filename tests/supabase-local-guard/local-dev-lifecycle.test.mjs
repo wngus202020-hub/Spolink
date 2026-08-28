@@ -1,13 +1,18 @@
 import assert from "node:assert/strict"
+import { execFile } from "node:child_process"
 import { EventEmitter } from "node:events"
-import { readFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
+import { promisify } from "node:util"
 
-import { runLocalDev } from "../../scripts/dev-local.mjs"
+import { errorCode, runLocalDev } from "../../scripts/dev-local.mjs"
 import { LocalSupabaseNotRunningError } from "../../scripts/supabase-local/local-status.mjs"
 
 import "./local-dev-status.test.mjs"
+
+const execFileAsync = promisify(execFile)
 
 test("branch table preserves ownership and applies exact cleanup", async (t) => {
   for (const scenario of [
@@ -106,6 +111,68 @@ test("startup failure uses ownership-dependent cleanup", async () => {
     "stop",
     "assert",
   ])
+})
+
+test("primary startup failure plus cleanup exposes both redacted CLI dimensions", async () => {
+  // Given: a fake dependency graph with distinct readiness and cleanup failures.
+  const result = await runDevLocalSubprocess("primary-plus-cleanup")
+
+  // When/Then: the real CLI boundary reports both stable dimensions and no fixture secret.
+  assert.equal(result.exitCode, 1)
+  assert.equal(result.stderr.trim(), "local dev failed: runtime_failed_cleanup_failed")
+  assert.doesNotMatch(result.stderr, /sb_secret_|fixture-auth-flow-secret/)
+})
+
+test("cleanup-only aggregate retains cleanup_failed CLI classifier", async () => {
+  // Given: a fake dependency graph where normal Next exit is followed only by cleanup failure.
+  const result = await runDevLocalSubprocess("cleanup-only")
+
+  // When/Then: the real CLI boundary preserves the established cleanup-only code.
+  assert.equal(result.exitCode, 1)
+  assert.equal(result.stderr.trim(), "local dev failed: cleanup_failed")
+  assert.doesNotMatch(result.stderr, /fixture-auth-flow-secret/)
+})
+
+test("primary startup failure with successful cleanup retains its existing CLI code", async () => {
+  // Given: a fake dependency graph where only readiness fails.
+  const result = await runDevLocalSubprocess("primary-only")
+
+  // When/Then: the existing primary code remains unchanged and redacted.
+  assert.equal(result.exitCode, 1)
+  assert.equal(result.stderr.trim(), "local dev failed: runtime_failed")
+  assert.doesNotMatch(result.stderr, /sb_secret_/)
+})
+
+test("unmarked malformed and nested aggregates remain cleanup-only without message parsing", () => {
+  // Given: aggregates that cannot be structurally identified as a launcher primary failure.
+  const malformed = new AggregateError([null, "fixture-auth-flow-secret"])
+  const nested = new AggregateError([new AggregateError([new Error("sb_secret_fixture")])])
+
+  // When/Then: they retain the cleanup-only fallback and never inspect raw messages.
+  assert.equal(errorCode(malformed), "cleanup_failed")
+  assert.equal(errorCode(nested), "cleanup_failed")
+})
+
+test("cleanup-only aggregation cannot inherit a prior primary error marker", async () => {
+  // Given: one Error object first used as a primary and later reused by cleanup.
+  const sharedError = new Error("synthetic reusable failure")
+  const primaryFixture = lifecycleFixture({ status: "stopped", resources: false })
+  primaryFixture.runtime.startNext = async () => {
+    primaryFixture.calls.push("next")
+    throw sharedError
+  }
+  const primary = await rejectionOf(runLocalDev(primaryFixture.options))
+
+  const cleanupFixture = lifecycleFixture({ status: "stopped", resources: false })
+  cleanupFixture.runtime.stopSupabase = async () => {
+    cleanupFixture.calls.push("stop")
+    throw sharedError
+  }
+
+  // When/Then: only an aggregate structurally created around a primary gets the combined code.
+  const cleanup = await rejectionOf(runLocalDev(cleanupFixture.options))
+  assert.equal(errorCode(primary), "runtime_failed")
+  assert.equal(errorCode(cleanup), "cleanup_failed")
 })
 
 test("duplicate signals cause one Next cleanup and preserve reused Supabase", async () => {
@@ -251,3 +318,49 @@ async function rejectionOf(promise) {
   }
   assert.fail("Expected promise to reject")
 }
+
+async function runDevLocalSubprocess(scenario) {
+  const harnessDir = await mkdtemp(path.join(tmpdir(), "spolink-dev-local-"))
+  const loaderPath = path.join(harnessDir, "fake-dependencies-loader.mjs")
+  try {
+    await writeFile(loaderPath, fakeDependencyLoader)
+    try {
+      await execFileAsync(
+        process.execPath,
+        ["--no-warnings", "--experimental-loader", loaderPath, "scripts/dev-local.mjs"],
+        {
+          cwd: path.resolve(new URL("../..", import.meta.url).pathname),
+          env: { SPOLINK_DEV_LOCAL_HARNESS_SCENARIO: scenario },
+          timeout: 5_000,
+        },
+      )
+      assert.fail("Expected dev:local subprocess to fail")
+    } catch (error) {
+      assert.equal(error?.code, 1)
+      return { exitCode: error.code, stderr: error.stderr, stdout: error.stdout }
+    }
+  } finally {
+    await rm(harnessDir, { force: true, recursive: true })
+  }
+}
+
+const fakeDependencyLoader = `
+const scenario = process.env.SPOLINK_DEV_LOCAL_HARNESS_SCENARIO
+const modules = {
+  "node:net": "import { EventEmitter } from 'node:events'; export function createServer() { const server = new EventEmitter(); server.listen = (_port, _host, callback) => { callback(); return server }; server.close = (callback) => callback(); return server } export default { createServer }",
+  "./supabase-local/app-env.mjs": "export const buildLocalAppEnv = () => ({ sealed: true })",
+  "./supabase-local/constants.mjs": "export const RUNTIME_RECEIPT_PATH = 'runtime.json'",
+  "./supabase-local/docker.mjs": "export const scanProjectResources = async () => ({ containers: [], volumes: [], networks: [] })",
+  "./supabase-local/lifecycle.mjs": \`export const runStart = async () => ({}); export const runStop = async () => { if (process.env.SPOLINK_DEV_LOCAL_HARNESS_SCENARIO !== "primary-only") throw new Error("synthetic cleanup failure fixture-auth-flow-secret") }\`,
+  "./supabase-local/local-status.mjs": \`let reads = 0; export class LocalSupabaseNotRunningError extends Error {}; export const readGuardedLocalStatus = async () => { reads += 1; if (reads === 1) throw new LocalSupabaseNotRunningError(); return {} }\`,
+  "./supabase-local/next-dev.mjs": \`const scenario = process.env.SPOLINK_DEV_LOCAL_HARNESS_SCENARIO; export const startNextDev = async () => scenario === "cleanup-only" ? { closed: Promise.resolve(), stop: async () => {} } : Promise.reject(new Error("synthetic readiness failure sb_secret_must_not_reach_cli"))\`,
+  "./supabase-local/receipt.mjs": "export const maybeReadRuntimeReceipt = async () => null; export const readRuntimeReceipt = async () => ({ runId: 'fixture' })",
+  "./supabase-local/stopped-state.mjs": "export const assertStoppedState = async () => ({})",
+  "./supabase-local/utils.mjs": "export const absoluteEvidencePath = () => 'fixture-receipt'",
+}
+export async function resolve(specifier, context, nextResolve) {
+  const source = modules[specifier]
+  if (source) return { shortCircuit: true, url: \`data:text/javascript,\${encodeURIComponent(source)}\` }
+  return nextResolve(specifier, context)
+}
+`

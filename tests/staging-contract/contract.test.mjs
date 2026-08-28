@@ -179,6 +179,28 @@ test("approved Task 2 evidence includes schema and final-wave metadata", () => {
   assert.deepEqual(result.redactionScan, { rawPatternCount: 0, verdict: "APPROVE" })
 })
 
+test("Vercel upload excludes local-only workspaces before filesystem traversal", async () => {
+  const ignoreEntries = new Set(
+    (await readFile(".vercelignore", "utf8"))
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean),
+  )
+
+  assert.deepEqual(
+    [".codegraph", ".next", ".omo", ".playwright-mcp", ".supabase", "supabase/.temp"].filter(
+      (entry) => !ignoreEntries.has(entry),
+    ),
+    [],
+  )
+})
+
+test("Vercel deploy uses the Next.js framework preset", async () => {
+  const config = JSON.parse(await readFile("vercel.json", "utf8"))
+
+  assert.equal(config.framework, "nextjs")
+})
+
 test("safe evidence writer confines output, redacts values, and sets mode 0600", async () => {
   const output = `.omo/evidence/staging-contract/contract-test-${process.pid}.json`
   try {

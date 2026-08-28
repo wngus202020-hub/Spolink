@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { readFile } from "node:fs/promises"
 import test from "node:test"
 import { assertRaceResultOrder } from "./cancellation-concurrency/slots.mjs"
 import * as barrierModule from "./database-barrier.mjs"
@@ -54,6 +55,12 @@ test("owned blocker-chain proof rejects a chain that does not reach the locker",
   ])
 
   assert.equal(barrierModule.findOwnedBlockerChain(waiter, candidates, 999), null)
+})
+
+test("notification snapshot ordering stays lexical across PostgreSQL storage type changes", async () => {
+  const source = await readFile("tests/supabase-e2e/cancellation-concurrency/state.mjs", "utf8")
+
+  assert.match(source, /order by row\.type::text, row\.user_id::text/u)
 })
 
 function validRaceResult() {

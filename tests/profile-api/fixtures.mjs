@@ -30,7 +30,7 @@ export const PROFILE_ORIGIN = new URL(PROFILE_URL).origin
 
 export function makeCreateRequest() {
   return {
-    defaultRegion: "서울 강남구",
+    defaultRegion: "서울특별시 강남구",
     displayName: "홍길동",
     locationAgreed: true,
     marketingAgreed: false,
@@ -42,7 +42,7 @@ export function makeCreateRequest() {
 export function makeProfileRow(overrides = {}) {
   return {
     avatar_path: overrides.avatarPath ?? null,
-    default_region: overrides.defaultRegion ?? "서울 강남구",
+    default_region: overrides.defaultRegion ?? "서울특별시 강남구",
     deleted_at: overrides.deletedAt ?? null,
     display_name: overrides.displayName ?? "홍길동",
     id: overrides.id ?? TEST_USER_ID,

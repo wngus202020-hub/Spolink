@@ -116,7 +116,12 @@ export async function submitSignupProfile(page: Page, profile: SignupProfileInpu
   await page.getByLabel("활동 이름").fill(profile.displayName)
   await page.getByLabel("실명").fill(profile.realName)
   await page.getByLabel("휴대폰 번호").fill(profile.phone)
-  await page.getByLabel("기본 활동 지역").fill(profile.defaultRegion)
+  await page.getByRole("searchbox", { name: "지역 검색", exact: true }).fill("강남구")
+  await page.getByRole("button", { name: "서울특별시 · 강남구", exact: true }).click()
+  await expect(page.getByRole("button", { name: /서울특별시 · 강남구/u })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  )
   if (profile.locationAgreed) {
     await page.getByLabel("내 주변 레슨 안내를 위한 위치 이용에 동의해요.").check()
   }
