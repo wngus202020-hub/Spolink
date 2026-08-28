@@ -1,4 +1,9 @@
 import type { SupabaseAppClient } from "../supabase/server"
+import {
+  type DashboardNotificationRow,
+  type DashboardReviewRow,
+  readCoachDashboardRows,
+} from "./dashboard-repository"
 
 export type CoachDashboardReadInput = Readonly<{
   client: SupabaseAppClient
@@ -37,6 +42,29 @@ export type CoachReservationSummary = Readonly<{
   confirmed: number
   labels: CoachReservationLabels
   pendingPayment: number
+}>
+
+export type CoachDashboard = Readonly<{
+  notifications: Readonly<{
+    items: readonly Readonly<{ body: string | null; createdAt: string; title: string }>[]
+    unreadCount: number
+  }>
+  pendingSettlements: Readonly<{ count: number; totalNetAmount: number }>
+  recentReviews: readonly Readonly<{
+    content: string | null
+    createdAt: string
+    lessonTitle: string
+    rating: number
+  }>[]
+  reservations: CoachReservationSummary
+  todaySchedules: readonly Readonly<{
+    capacity: number
+    endsAt: string
+    isOpen: boolean
+    lessonTitle: string
+    reservedCount: number
+    startsAt: string
+  }>[]
 }>
 
 export class CoachDashboardReadError extends Error {
@@ -129,6 +157,114 @@ export function summarizeCoachReservations(
     labels: RESERVATION_LABELS,
     pendingPayment,
   }
+}
+
+export async function readCoachDashboard(input: CoachDashboardReadInput): Promise<CoachDashboard> {
+  try {
+    const window = getKstDayWindow(input.now)
+    const rows = await readCoachDashboardRows({
+      client: input.client,
+      coachProfileId: input.coachProfileId,
+      endExclusive: window.endExclusive,
+      profileId: input.profileId,
+      start: window.start,
+    })
+    const lessonTitles = new Map<string, string>()
+    for (const lesson of rows.lessons) {
+      requireNonEmptyString(lesson.id)
+      requireNonEmptyString(lesson.title)
+      lessonTitles.set(lesson.id, lesson.title)
+    }
+
+    const schedules = summarizeCoachSchedules(rows.schedules, [...lessonTitles.keys()], input.now)
+    const reservations = rows.reservationStatuses.map((row) => {
+      if (row.status !== "pending_payment" && row.status !== "confirmed") {
+        throw new CoachDashboardReadError()
+      }
+      return { coach_profile_id: input.coachProfileId, status: row.status }
+    })
+
+    return {
+      notifications: {
+        items: rows.notifications.map(mapNotification),
+        unreadCount: rows.unreadNotificationCount,
+      },
+      pendingSettlements: summarizeSettlements(rows.settlements),
+      recentReviews: rows.reviews.map((row) => mapReview(row, lessonTitles)),
+      reservations: summarizeCoachReservations(reservations, input.coachProfileId),
+      todaySchedules: schedules.map((row) => {
+        const lessonTitle = lessonTitles.get(row.lesson_id)
+        if (lessonTitle === undefined) throw new CoachDashboardReadError()
+        requireNonNegativeInteger(row.capacity)
+        requireNonNegativeInteger(row.reserved_count)
+        if (typeof row.is_open !== "boolean") throw new CoachDashboardReadError()
+        parseTimestamp(row.ends_at)
+        return {
+          capacity: row.capacity,
+          endsAt: row.ends_at,
+          isOpen: row.is_open,
+          lessonTitle,
+          reservedCount: row.reserved_count,
+          startsAt: row.starts_at,
+        }
+      }),
+    }
+  } catch {
+    throw new CoachDashboardReadError()
+  }
+}
+
+function summarizeSettlements(
+  rows: readonly Readonly<{ net_amount: number }>[],
+): Readonly<{ count: number; totalNetAmount: number }> {
+  let totalNetAmount = 0
+  for (const row of rows) {
+    requireNonNegativeInteger(row.net_amount)
+    totalNetAmount += row.net_amount
+    if (!Number.isSafeInteger(totalNetAmount)) throw new CoachDashboardReadError()
+  }
+  return { count: rows.length, totalNetAmount }
+}
+
+function mapReview(
+  row: DashboardReviewRow,
+  lessonTitles: ReadonlyMap<string, string>,
+): CoachDashboard["recentReviews"][number] {
+  requireTimestamp(row.created_at)
+  if (!Number.isInteger(row.rating) || row.rating < 1 || row.rating > 5) {
+    throw new CoachDashboardReadError()
+  }
+  if (row.content !== null && typeof row.content !== "string") throw new CoachDashboardReadError()
+  const lessonTitle = lessonTitles.get(row.lesson_id)
+  if (lessonTitle === undefined) throw new CoachDashboardReadError()
+  return {
+    content: row.content,
+    createdAt: row.created_at,
+    lessonTitle,
+    rating: row.rating,
+  }
+}
+
+function mapNotification(
+  row: DashboardNotificationRow,
+): CoachDashboard["notifications"]["items"][number] {
+  requireNonEmptyString(row.title)
+  requireTimestamp(row.created_at)
+  if (row.body !== null && typeof row.body !== "string") throw new CoachDashboardReadError()
+  return { body: row.body, createdAt: row.created_at, title: row.title }
+}
+
+function requireNonEmptyString(value: string): void {
+  if (typeof value !== "string" || value.length === 0) throw new CoachDashboardReadError()
+}
+
+function requireNonNegativeInteger(value: number): void {
+  if (!Number.isSafeInteger(value) || value < 0) throw new CoachDashboardReadError()
+}
+
+function requireTimestamp(value: string): void {
+  if (typeof value !== "string") throw new CoachDashboardReadError()
+  parseTimestamp(value)
 }
 
 function readCalendarPart(parts: readonly Intl.DateTimeFormatPart[], type: string): number {
