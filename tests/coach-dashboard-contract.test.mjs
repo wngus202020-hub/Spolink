@@ -125,16 +125,20 @@ test("Todo 4 dashboard creates neither a public API nor a migration", () => {
 
 test("downstream Todo 5 header navigation exposes the approved coach center", () => {
   const header = readFileSync("components/layout/public-header.tsx", "utf8")
+  const navigation = readFileSync("lib/auth/coach-navigation.ts", "utf8")
 
-  assert.match(header, /지도자 센터/u)
-  assert.match(header, /\/coach\/dashboard/u)
+  assert.match(header, /getCoachNavigationEntry\(auth\)/u)
+  assert.match(navigation, /headerLabel: "지도자 센터"/u)
+  assert.match(navigation, /href: "\/coach\/dashboard"/u)
 })
 
 test("downstream Todo 5 mypage exposes the approved coach center", () => {
   const mypage = readFileSync("app/mypage/page.tsx", "utf8")
+  const navigation = readFileSync("lib/auth/coach-navigation.ts", "utf8")
 
-  assert.match(mypage, /지도자 센터/u)
-  assert.match(mypage, /\/coach\/dashboard/u)
+  assert.match(mypage, /getCoachNavigationEntry\(auth\)/u)
+  assert.match(navigation, /cardLabel: "지도자 센터"/u)
+  assert.match(navigation, /href: "\/coach\/dashboard"/u)
 })
 
 test("adversarial fixtures reject an unguarded UI state and public dashboard API", () => {

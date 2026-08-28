@@ -13,6 +13,7 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { PublicHeader } from "@/components/layout/public-header"
 import { StatusBadge } from "@/components/ui/status-badge"
+import { getCoachNavigationEntry } from "@/lib/auth/coach-navigation"
 import { readPageAuthProfile } from "@/lib/auth/page-auth"
 
 export const dynamic = "force-dynamic"
@@ -32,6 +33,7 @@ export default async function MyPage() {
   if (auth.kind === "profile_required") {
     redirect("/onboarding/profile")
   }
+  const coachNavigation = getCoachNavigationEntry(auth)
 
   return (
     <main className="min-h-[100dvh]">
@@ -212,23 +214,23 @@ export default async function MyPage() {
             </article>
 
             <Link
-              aria-label="지도자 등록 안내로 이동"
+              aria-label={coachNavigation.ariaLabel}
               className="group grid min-h-48 content-between gap-5 rounded-[var(--radius-xl)] border border-line bg-canvas p-5 hover:bg-subtle md:col-span-2 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center md:p-6"
-              href="/coach/apply"
+              href={coachNavigation.href}
             >
               <span className="inline-flex size-12 items-center justify-center rounded-[var(--radius-lg)] bg-inset text-primary">
                 <ShieldCheck aria-hidden="true" className="size-6" strokeWidth={1.8} />
               </span>
               <span className="grid gap-1">
                 <strong className="text-[22px] font-bold leading-[1.36] text-primary">
-                  지도자 등록
+                  {coachNavigation.cardLabel}
                 </strong>
                 <span className="text-sm leading-[1.6] text-secondary">
-                  자격과 경력을 인증하고 지도자 활동을 준비해요.
+                  {coachNavigation.description}
                 </span>
               </span>
               <span className="inline-flex min-h-11 w-fit items-center gap-2 text-sm font-bold text-primary">
-                등록 안내
+                {coachNavigation.actionLabel}
                 <ArrowRight aria-hidden="true" className="size-4" strokeWidth={1.8} />
               </span>
             </Link>

@@ -1,16 +1,16 @@
 import Link from "next/link"
+import { getCoachNavigationEntry } from "@/lib/auth/coach-navigation"
 import type { PageAuthProfile } from "@/lib/auth/page-auth"
 
-const navigationItems = [
-  { href: "/lessons", label: "레슨" },
-  { href: "/coach/apply", label: "지도자 등록" },
-] as const
+const navigationItems = [{ href: "/lessons", label: "레슨" }] as const
 
 type PublicHeaderProps = Readonly<{
   auth: PageAuthProfile
 }>
 
 export function PublicHeader({ auth }: PublicHeaderProps) {
+  const coachNavigation = getCoachNavigationEntry(auth)
+
   return (
     <header className="mx-auto flex min-h-18 w-full max-w-[1280px] flex-wrap items-center justify-between gap-4 px-4 py-4 md:px-6">
       <Link className="text-xl font-bold tracking-normal text-primary" href="/">
@@ -29,6 +29,12 @@ export function PublicHeader({ auth }: PublicHeaderProps) {
             {item.label}
           </Link>
         ))}
+        <Link
+          className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-[var(--radius-pill)] px-3 py-2 hover:bg-inset sm:px-4"
+          href={coachNavigation.href}
+        >
+          {coachNavigation.headerLabel}
+        </Link>
         <HeaderAccountAction auth={auth} />
       </nav>
     </header>

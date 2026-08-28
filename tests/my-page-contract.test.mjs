@@ -15,7 +15,10 @@ test("My Page header exposes stable ready-user 마이 navigation", async () => {
 })
 
 test("My Page home links implemented personal activity routes", async () => {
-  const page = await read("app/mypage/page.tsx")
+  const [page, coachNavigation] = await Promise.all([
+    read("app/mypage/page.tsx"),
+    read("lib/auth/coach-navigation.ts"),
+  ])
   const personalInfoCard =
     page.match(/aria-label="내 정보 수정으로 이동"[\s\S]*?<\/Link>/u)?.[0] ?? ""
 
@@ -33,7 +36,10 @@ test("My Page home links implemented personal activity routes", async () => {
   assert.match(page, /href="\/mypage\/reservations"/u)
   assert.match(page, /href="\/mypage\/favorites"/u)
   assert.match(page, /href="\/mypage\/trust-safety"/u)
-  assert.match(page, /href="\/coach\/apply"/u)
+  assert.match(page, /href=\{coachNavigation\.href\}/u)
+  assert.match(coachNavigation, /href: "\/coach\/apply"/u)
+  assert.match(coachNavigation, /href: "\/coach\/apply\/status"/u)
+  assert.match(coachNavigation, /href: "\/coach\/dashboard"/u)
   assert.match(page, /찜한 레슨/u)
 })
 
