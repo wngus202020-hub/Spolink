@@ -29,6 +29,7 @@
     "test:e2e:payment": "node tests/auth-ui-e2e/run-payment-preparation.mjs",
     "test:e2e:reservations": "node tests/auth-ui-e2e/run-learner-reservations.mjs",
     "test:e2e:profile-edit": "node tests/auth-ui-e2e/run-mypage-profile-edit.mjs",
+    "test:e2e:coach-dashboard": "node tests/auth-ui-e2e/run-coach-dashboard.mjs",
     "test:e2e:direction-alignment": "node tests/auth-ui-e2e/run-direction-alignment.mjs .omo/evidence/opencode-direction-alignment/task-14-visual-qa.json",
     "test:e2e:task-10": "node tests/auth-ui-e2e/run-task-10-ui.mjs .omo/evidence/high-priority-missing-services/task-10/ui.json",
     "test:e2e:high-priority": "node tests/auth-ui-e2e/run-task-10-ui.mjs .omo/evidence/high-priority-missing-services/task-10/ui.json",
