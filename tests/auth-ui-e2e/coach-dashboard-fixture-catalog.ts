@@ -57,6 +57,7 @@ export function buildDashboardSettlements(
 export function buildDashboardPersonas(): CoachDashboardFixturePlan["personas"] {
   return [
     { accountState: "coach_approved", alias: "approved-owner", coachState: "approved" },
+    { accountState: "coach_approved", alias: "empty-coach", coachState: "approved" },
     { accountState: "coach_approved", alias: "foreign-coach", coachState: "approved" },
     { accountState: "active", alias: "profile-required", coachState: null },
     { accountState: "active", alias: "active-learner", coachState: null },

@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 import { writeCoachDashboardEvidence } from "./coach-dashboard-evidence.mjs"
+import { resolveCoachDashboardRunTarget } from "./coach-dashboard-run-target.mjs"
 import {
   defaultCoachDashboardEpoch,
   executeCoachDashboardRun,
 } from "./coach-dashboard-runner-core.mjs"
 import { updateCoachDashboardTask7Manifest } from "./coach-dashboard-task7-manifest.mjs"
+import { writeCoachDashboardTask8Reports } from "./coach-dashboard-task8-reports.mjs"
 import { resolveEvidenceChildPath } from "./evidence-paths.mjs"
 
 async function main() {
   const cli = readCli(process.argv.slice(2))
-  const target = defaultRunTarget(cli.grep)
+  const target = resolveCoachDashboardRunTarget(cli.grep)
   const outputPath = await resolveEvidenceChildPath(cli.outputPath ?? target.outputPath, {
     kind: "file",
     suffix: ".json",
@@ -29,26 +31,17 @@ async function main() {
     visualDir,
   })
   await writeCoachDashboardEvidence(outputPath, summary)
-  if (cli.outputPath === null && target.variant !== "full") {
+  if (
+    cli.outputPath === null &&
+    target.variant === "visual-responsive" &&
+    summary.verdict === "APPROVE"
+  ) {
+    await writeCoachDashboardTask8Reports({ root: target.root, summary })
+  }
+  if (cli.outputPath === null && target.root.endsWith("/task-7") && target.variant !== "full") {
     await updateCoachDashboardTask7Manifest({ root: target.root })
   }
   if (summary.verdict !== "APPROVE") process.exitCode = 1
-}
-
-function defaultRunTarget(grep) {
-  const variant =
-    grep?.includes("redirect") || grep?.includes("ownership")
-      ? "redirect-ownership"
-      : grep?.includes("populated") || grep?.includes("navigation")
-        ? "populated-navigation"
-        : "full"
-  const root = ".omo/evidence/coach-dashboard-screen/task-7"
-  return {
-    outputPath: `${root}/${variant}.json`,
-    root,
-    variant,
-    visualDir: `${root}/${variant}-visual`,
-  }
 }
 
 function readCli(args) {

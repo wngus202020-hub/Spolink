@@ -42,6 +42,7 @@ test("fixture plan is deterministic around the explicitly supplied epoch", () =>
     })),
     [
       { accountState: "coach_approved", alias: "approved-owner", coachState: "approved" },
+      { accountState: "coach_approved", alias: "empty-coach", coachState: "approved" },
       { accountState: "coach_approved", alias: "foreign-coach", coachState: "approved" },
       { accountState: "active", alias: "profile-required", coachState: null },
       { accountState: "active", alias: "active-learner", coachState: null },
@@ -53,8 +54,8 @@ test("fixture plan is deterministic around the explicitly supplied epoch", () =>
       { accountState: "active", alias: "learner-reviewer", coachState: null },
     ],
   )
-  assert.equal(first.personas.filter((persona) => persona.alias !== "profile-required").length, 9)
-  assert.equal(first.personas.filter((persona) => persona.coachState !== null).length, 5)
+  assert.equal(first.personas.filter((persona) => persona.alias !== "profile-required").length, 10)
+  assert.equal(first.personas.filter((persona) => persona.coachState !== null).length, 6)
   assert.notDeepEqual(buildCoachDashboardFixturePlan("2026-08-30T03:00:00.000Z"), first)
 })
 

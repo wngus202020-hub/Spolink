@@ -63,7 +63,7 @@ test("injected failure remains nonzero and preserves all four cleanup counters",
     outputPath: path.join(fakeOutputRoot, "failure-summary.json"),
     visualDir: path.join(fakeOutputRoot, "failure-visual"),
     dependencies: {
-      collectVisuals: async () => ({ files: [], verdict: "REJECT" }),
+      collectBasicVisuals: async () => ({ files: [], verdict: "REJECT" }),
       prepareRawOutput: async () => ({
         cleanup: async () => cleanup.push("raw"),
         dir: "/private/raw",
@@ -164,7 +164,11 @@ test("focused contract inventory stays split and independent of evidence files",
   assert.deepEqual(names, [
     "coach-dashboard-evidence-security.test.mjs",
     "coach-dashboard-fixture-plan.test.mjs",
+    "coach-dashboard-png.test.mjs",
     "coach-dashboard-runner-behavior.test.mjs",
+    "coach-dashboard-task8-reports.test.mjs",
+    "coach-dashboard-visual-contract.test.mjs",
+    "coach-dashboard-visual-runner.test.mjs",
   ])
   const evidencePrefix = [".", "omo", ""].join("/")
   for (const name of names) {
@@ -176,7 +180,7 @@ test("focused contract inventory stays split and independent of evidence files",
 
 function successfulDependencies(observeInvocation) {
   return {
-    collectVisuals: async () => ({
+    collectBasicVisuals: async () => ({
       files: [{ bytes: 1, name: "coach-dashboard-foundation-desktop.png", sha256: "a".repeat(64) }],
       verdict: "APPROVE",
     }),

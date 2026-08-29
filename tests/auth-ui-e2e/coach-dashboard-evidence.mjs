@@ -37,6 +37,7 @@ const allowedEvidenceFields = new Set([
   "failureClass",
   "failureHash",
   "fixtureCleanup",
+  "fixtureRuns",
   "grepApplied",
   "lifecycleCleanupReceipt",
   "outputHash",
@@ -45,8 +46,10 @@ const allowedEvidenceFields = new Set([
   "schemaVersion",
   "selfHash",
   "signal",
+  "sourceBinding",
   "specs",
   "verdict",
+  "visualChecks",
   "visuals",
 ])
 

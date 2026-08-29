@@ -1,6 +1,12 @@
-import { chmod, readdir, readFile, stat } from "node:fs/promises"
 import path from "node:path"
-
+import { collectBasicCoachDashboardVisuals } from "./coach-dashboard-runner-visuals.mjs"
+import {
+  collectCoachDashboardVisualEvidence,
+  isCoachDashboardVisualGrep,
+  prepareCoachDashboardVisualDirectory,
+  readCoachDashboardVisualSourceBinding,
+  visualScreenshotNames,
+} from "./coach-dashboard-visual-artifacts.mjs"
 import { withConfiguredAuthMode } from "./lifecycle.mjs"
 import { buildChildEnv, runBuffered, sha256 } from "./process.mjs"
 import { prepareRawPlaywrightOutputDir } from "./raw-output.mjs"
@@ -17,15 +23,21 @@ export function defaultCoachDashboardEpoch(now) {
 }
 
 export async function executeCoachDashboardRun(options) {
+  const visualRun = isCoachDashboardVisualGrep(options.grep)
   const dependencies = {
-    collectVisuals: collectVisualEvidence,
+    collectBasicVisuals: collectBasicCoachDashboardVisuals,
+    collectVisuals: collectCoachDashboardVisualEvidence,
     prepareRawOutput: () => prepareRawPlaywrightOutputDir({ retain: false, suppliedDir: null }),
+    prepareVisualDir: prepareCoachDashboardVisualDirectory,
+    readSourceBinding: readCoachDashboardVisualSourceBinding,
     runPlaywright: runPlaywrightProcess,
     withLifecycle: withConfiguredAuthMode,
     ...options.dependencies,
   }
   validateEpoch(options.epoch)
   const injectedRun = validateFailureOptions(options)
+  const sourceBinding = visualRun ? await dependencies.readSourceBinding() : null
+  if (visualRun) await dependencies.prepareVisualDir(options.visualDir)
   const rawOutput = await dependencies.prepareRawOutput()
   let lifecycleErrorHash = null
   let lifecycleSummary = null
@@ -41,6 +53,9 @@ export async function executeCoachDashboardRun(options) {
           runId: `coach-dashboard-${sha256(options.epoch).slice(0, 12)}-${process.pid}`,
         },
         async ({ baseUrl, status }) => {
+          const projects = visualRun
+            ? ["desktop-chromium", "mobile-chromium", "tablet-chromium"]
+            : ["desktop-chromium"]
           const args = [
             "pnpm",
             "exec",
@@ -48,7 +63,7 @@ export async function executeCoachDashboardRun(options) {
             "test",
             "--config=playwright.auth.config.ts",
             spec,
-            "--project=desktop-chromium",
+            ...projects.map((project) => `--project=${project}`),
             "--workers",
             "1",
             ...(options.grep ? ["--grep", options.grep] : []),
@@ -70,16 +85,20 @@ export async function executeCoachDashboardRun(options) {
               : {}),
           })
           const result = await dependencies.runPlaywright({ args, env })
-          const fixtureEvent = readFixtureEvent(result.stdout)
+          const fixtureEvents = readFixtureEvents(result.stdout)
+          const fixtureSummary = summarizeFixtureEvents(fixtureEvents)
+          const visualChecks = visualRun ? readVisualEvents(result.stdout) : null
           return {
             exitCode: result.exitCode,
             failureClass: result.exitCode === 0 ? null : "playwright",
             failureHash:
               result.exitCode === 0 ? null : sha256(`${result.stdout}\n${result.stderr}`),
-            fixtureCleanup: fixtureEvent?.cleanup ?? null,
-            scenario: fixtureEvent?.scenario ?? null,
+            fixtureCleanup: fixtureSummary?.cleanup ?? null,
+            fixtureRuns: fixtureEvents.length,
+            scenario: fixtureSummary?.scenario ?? null,
             signal: result.signal,
             outputHash: sha256(`${result.stdout}${result.stderr}`),
+            visualChecks,
           }
         },
       )
@@ -91,8 +110,14 @@ export async function executeCoachDashboardRun(options) {
     rawOutputCleanupHash = sha256(JSON.stringify(cleanup ?? { retained: false }))
   }
 
-  const visuals = await dependencies.collectVisuals(options.visualDir, options.grep ? 1 : 2)
+  const visuals = visualRun
+    ? await dependencies.collectVisuals(options.visualDir, {
+        expectedNames: visualScreenshotNames,
+        freshnessFloorMs: sourceBinding?.latestMtimeMs,
+      })
+    : await dependencies.collectBasicVisuals(options.visualDir, options.grep ? 1 : 7)
   const fixtureCleanup = lifecycleSummary?.fixtureCleanup ?? null
+  const expectedFixtureRuns = visualRun ? 3 : 1
   const approved =
     lifecycleSummary?.exitCode === 0 &&
     lifecycleErrorHash === null &&
@@ -100,6 +125,8 @@ export async function executeCoachDashboardRun(options) {
     fixtureCleanup?.graphRowsRemaining === 0 &&
     fixtureCleanup?.profilesRemaining === 0 &&
     fixtureCleanup?.usersRemaining === 0 &&
+    lifecycleSummary?.fixtureRuns === expectedFixtureRuns &&
+    (!visualRun || lifecycleSummary?.visualChecks?.verdict === "APPROVE") &&
     visuals.verdict === "APPROVE"
   return {
     schemaVersion: 1,
@@ -108,14 +135,17 @@ export async function executeCoachDashboardRun(options) {
     failureClass: lifecycleSummary?.failureClass ?? (lifecycleErrorHash ? "lifecycle" : null),
     failureHash: lifecycleSummary?.failureHash ?? lifecycleErrorHash,
     fixtureCleanup,
+    fixtureRuns: lifecycleSummary?.fixtureRuns ?? 0,
     grepApplied: Boolean(options.grep),
     lifecycleCleanupReceipt: path.basename(options.outputPath.replace(/\.json$/u, ".cleanup.json")),
     outputHash: lifecycleSummary?.outputHash ?? null,
     rawOutputCleanupHash,
     scenario: lifecycleSummary?.scenario ?? (options.failurePoint ? "injected-failure" : "unknown"),
     signal: lifecycleSummary?.signal ?? null,
+    sourceBinding,
     specs: [spec],
     verdict: approved ? "APPROVE" : "REJECT",
+    visualChecks: lifecycleSummary?.visualChecks ?? null,
     visuals,
   }
 }
@@ -124,25 +154,8 @@ async function runPlaywrightProcess({ args, env }) {
   return runBuffered("corepack", args, { env })
 }
 
-async function collectVisualEvidence(directory, expectedCount) {
-  let names = []
-  try {
-    names = (await readdir(directory)).filter((name) => name.endsWith(".png")).sort()
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error
-  }
-  const files = []
-  for (const name of names) {
-    const filePath = path.join(directory, name)
-    await chmod(filePath, 0o600)
-    const metadata = await stat(filePath)
-    if (!metadata.isFile() || metadata.size === 0) throw new Error("Invalid dashboard PNG")
-    files.push({ bytes: metadata.size, name, sha256: sha256(await readFile(filePath)) })
-  }
-  return { files, verdict: files.length === expectedCount ? "APPROVE" : "REJECT" }
-}
-
-function readFixtureEvent(stdout) {
+function readFixtureEvents(stdout) {
+  const events = []
   for (const line of stdout.split(/\r?\n/u)) {
     const marker = "COACH_DASHBOARD_FIXTURE "
     const start = line.indexOf(marker)
@@ -155,10 +168,54 @@ function readFixtureEvent(stdout) {
       Number.isInteger(value?.cleanup?.profilesRemaining) &&
       Number.isInteger(value?.cleanup?.usersRemaining)
     ) {
-      return value
+      events.push(value)
     }
   }
-  return null
+  return events
+}
+
+function summarizeFixtureEvents(events) {
+  if (events.length === 0) return null
+  const keys = [
+    "coachProfilesRemaining",
+    "graphRowsRemaining",
+    "profilesRemaining",
+    "usersRemaining",
+  ]
+  return {
+    cleanup: Object.fromEntries(
+      keys.map((key) => [key, Math.max(...events.map((event) => event.cleanup[key]))]),
+    ),
+    scenario: events.at(-1)?.scenario ?? null,
+  }
+}
+
+function readVisualEvents(stdout) {
+  const projects = []
+  for (const line of stdout.split(/\r?\n/u)) {
+    const marker = "COACH_DASHBOARD_VISUAL "
+    const start = line.indexOf(marker)
+    if (start < 0) continue
+    const value = JSON.parse(line.slice(start + marker.length))
+    if (
+      ["desktop", "mobile", "tablet"].includes(value?.project) &&
+      Array.isArray(value?.captures) &&
+      value?.verdict === "APPROVE"
+    ) {
+      projects.push(value)
+    }
+  }
+  const projectNames = projects.map((project) => project.project).sort()
+  const captureCount = projects.reduce((count, project) => count + project.captures.length, 0)
+  return {
+    captureCount,
+    projects,
+    verdict:
+      JSON.stringify(projectNames) === JSON.stringify(["desktop", "mobile", "tablet"]) &&
+      captureCount === 14
+        ? "APPROVE"
+        : "REJECT",
+  }
 }
 
 function validateEpoch(epoch) {

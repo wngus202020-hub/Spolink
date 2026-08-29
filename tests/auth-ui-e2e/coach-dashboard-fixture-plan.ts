@@ -8,6 +8,7 @@ import {
 
 export const coachDashboardPersonaAliases = [
   "approved-owner",
+  "empty-coach",
   "foreign-coach",
   "profile-required",
   "active-learner",
