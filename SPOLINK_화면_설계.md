@@ -917,7 +917,13 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 
 목적:
 
-- 지도자가 오늘 수업, 예약, 정산, 처리 필요 항목을 확인한다.
+- 승인된 지도자가 본인 소유의 오늘 일정, 예약 처리 현황, 정산, 최근 활동을 한곳에서 확인한다.
+
+접근 및 내비게이션:
+
+- `coach_profiles.status = approved`와 `profiles.status = coach_approved`를 모두 만족해야 한다.
+- 승인된 지도자는 공용 헤더와 마이페이지의 `지도자 센터`에서 `/coach/dashboard`로 진입한다.
+- 그 밖의 로그인, 프로필 설정, 신청 상태, 제한 계정은 공통 페이지 인증 경계의 안전한 경로로 이동한다.
 
 주요 콘텐츠:
 
@@ -926,29 +932,38 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - 예약 요청/확정 현황
 - 완료 처리 대기
 - 정산 대기 금액
-- 최근 리뷰
+- 최신 공개 리뷰 3개
+- 최신 미확인 알림 3개와 전체 미확인 수
 
 주요 액션:
 
 - 레슨 등록
-- 일정 등록
+- 레슨 일정 관리
 - 예약 관리
-- 정산 보기
+- 정산 관리
 
-연결 API:
+데이터 경계:
 
-- `GET /api/me`
-- `GET /api/reservations?role=coach`
-- `GET /api/settlements`
-- `GET /api/notifications`
+- 별도 지도자 대시보드 API를 만들지 않는다.
+- 승인 경계를 먼저 통과한 Server Component가 현재 사용자 세션의 RLS-aware Supabase client로
+  기존 `lessons`, `lesson_schedules`, `reservations`, `settlements`, `reviews`, `notifications`
+  데이터를 지도자/프로필 소유 범위로 읽는다.
+- 페이지는 `force-dynamic`, `force-no-store`, `revalidate = 0`이며 service role이나 학습자 PII,
+  리뷰 작성자 식별자, 알림 raw payload를 노출하지 않는다.
 
 상태:
 
-- 인증 미제출
-- 심사 중
-- 승인됨
-- 반려됨
-- 활동 제한
+- 데이터가 있는 운영 화면
+- 섹션별 빈 상태
+- 로딩 상태
+- 오류 상태와 포커스된 한국어 제목
+- 키보드로 실행 가능한 다시 시도 및 정상 화면 복구
+
+검증된 화면 범위:
+
+- 390x844, 768x1024, 1280x800에서 populated/empty/loading/error 상태를 검증한다.
+- 390x844와 1280x800의 populated 상태는 dark color scheme도 검증한다.
+- 관리형 실행 명령은 `corepack pnpm test:e2e:coach-dashboard`다.
 
 ## 18. 지도자 레슨 목록
 
@@ -1405,7 +1420,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 | 예약 상세 | Server Component 학습자 소유 읽기 모델 (일반 `GET /api/reservations/{reservationId}`는 현재 미구현) |
 | 리뷰 작성 | `POST /api/reviews` |
 | 신고 | `POST /api/reports` |
-| 지도자 대시보드 | `GET /api/reservations?role=coach`, `GET /api/settlements` |
+| 지도자 대시보드 | 별도 API 없음. 승인된 지도자의 RLS-aware Server Component가 기존 레슨·일정·예약·정산·리뷰·알림 읽기 모델을 소유 범위로 구성 |
 | 관리자 인증 | `GET /api/admin/coach-profiles`, approve/reject APIs |
 | 관리자 신고 | `GET /api/reports`, `POST /api/admin/reports/{reportId}/resolve` |
 

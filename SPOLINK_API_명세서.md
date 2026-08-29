@@ -13,6 +13,17 @@ SPOLINK MVP의 API 계약을 정의한다. 이 문서는 `SPOLINK_서비스_정�
 - 외부 서비스별 세부 파라미터는 구현 직전에 공식 문서로 재확인한다.
 - API 리소스명은 `SPOLINK_ERD.md`의 테이블명을 따른다.
 
+### 지도자 대시보드 페이지 읽기 경계
+
+- `/coach/dashboard`는 API endpoint가 아니라 승인된 지도자 전용 Server Component다.
+- 페이지는 `readApprovedCoachPage("/coach/dashboard")`로 `coach_profiles.status = approved`와
+  `profiles.status = coach_approved`를 먼저 확인한다.
+- 현재 사용자 세션의 RLS-aware Supabase client로 기존 `lessons`, `lesson_schedules`,
+  `reservations`, `settlements`, `reviews`, `notifications`를 지도자/프로필 소유 범위로 읽어
+  화면 전용 read-model을 구성한다.
+- 이 화면을 위해 새 Route Handler나 공개 응답 계약을 추가하지 않으며 service role을 사용하지
+  않는다. 페이지 읽기는 dynamic/no-store로 유지한다.
+
 ## API 표기 규칙
 
 | 표기 | 의미 |
