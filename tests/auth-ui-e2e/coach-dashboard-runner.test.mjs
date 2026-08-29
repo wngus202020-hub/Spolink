@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
-import { readFile, stat } from "node:fs/promises"
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import test from "node:test"
 
@@ -12,6 +13,7 @@ import { buildCoachDashboardFixturePlan } from "./coach-dashboard-fixture-plan.t
 import { executeCoachDashboardRun } from "./coach-dashboard-runner-core.mjs"
 
 const epoch = "2026-08-29T03:00:00.000Z"
+const fakeOutputRoot = path.join("test-output", "coach-dashboard")
 
 test("fixture plan is deterministic around the explicitly supplied epoch", () => {
   const first = buildCoachDashboardFixturePlan(epoch)
@@ -53,8 +55,8 @@ test("runner behavior reuses one lifecycle, one worker, supplied epoch, and grep
   const result = await executeCoachDashboardRun({
     epoch,
     grep: "smoke foundation",
-    outputPath: ".omo/evidence/coach-dashboard-screen/task-6/fake-summary.json",
-    visualDir: ".omo/evidence/coach-dashboard-screen/task-6/fake-visual",
+    outputPath: path.join(fakeOutputRoot, "fake-summary.json"),
+    visualDir: path.join(fakeOutputRoot, "fake-visual"),
     dependencies: {
       collectVisuals: async () => ({
         files: [
@@ -109,8 +111,8 @@ test("injected failure remains nonzero while lifecycle and raw output cleanup bo
     allowInjectedFailure: true,
     epoch,
     failurePoint: "after-seed",
-    outputPath: ".omo/evidence/coach-dashboard-screen/task-6/failure-summary.json",
-    visualDir: ".omo/evidence/coach-dashboard-screen/task-6/failure-visual",
+    outputPath: path.join(fakeOutputRoot, "failure-summary.json"),
+    visualDir: path.join(fakeOutputRoot, "failure-visual"),
     dependencies: {
       collectVisuals: async () => ({ files: [], verdict: "REJECT" }),
       prepareRawOutput: async () => ({
@@ -162,8 +164,8 @@ test("ordinary runner strips stale inherited contract and injection environment"
   try {
     await executeCoachDashboardRun({
       epoch,
-      outputPath: ".omo/evidence/coach-dashboard-screen/task-6/ordinary-summary.json",
-      visualDir: ".omo/evidence/coach-dashboard-screen/task-6/ordinary-visual",
+      outputPath: path.join(fakeOutputRoot, "ordinary-summary.json"),
+      visualDir: path.join(fakeOutputRoot, "ordinary-visual"),
       dependencies: createSuccessfulDependencies((env) => {
         childEnv = env
       }),
@@ -199,67 +201,69 @@ test("direct spec injection decision requires both selector and contract gate", 
 })
 
 test("evidence is private, self-hash verified, and contains no sensitive values", async () => {
-  const fixturePath = path.resolve(
-    ".omo/evidence/coach-dashboard-screen/task-6/contract-evidence.json",
-  )
-  await writeCoachDashboardEvidence(fixturePath, {
-    epochHash: "a".repeat(64),
-    fixtureCleanup: { dbRowsRemaining: 0, usersRemaining: 0 },
-    verdict: "APPROVE",
-  })
-  const evidence = await readCoachDashboardEvidence(fixturePath)
+  const temporaryDirectory = await createTemporaryEvidenceDirectory()
+  const fixturePath = path.join(temporaryDirectory, "contract-evidence.json")
+  try {
+    await writeCoachDashboardEvidence(fixturePath, {
+      epochHash: "a".repeat(64),
+      fixtureCleanup: { dbRowsRemaining: 0, usersRemaining: 0 },
+      verdict: "APPROVE",
+    })
+    const evidence = await readCoachDashboardEvidence(fixturePath)
 
-  assert.equal((await stat(fixturePath)).mode & 0o777, 0o600)
-  assert.equal(evidence.verdict, "APPROVE")
-  assertCoachDashboardEvidenceRedacted(evidence)
+    assert.equal((await stat(fixturePath)).mode & 0o777, 0o600)
+    assert.equal(evidence.verdict, "APPROVE")
+    assertCoachDashboardEvidenceRedacted(evidence)
+  } finally {
+    await rm(temporaryDirectory, { force: true, recursive: true })
+  }
 })
 
 test("evidence writer rejects raw reporter output and stack-shaped fields", async () => {
-  const fixturePath = path.resolve(
-    ".omo/evidence/coach-dashboard-screen/task-6/raw-output-rejected.json",
-  )
-  await assert.rejects(
-    writeCoachDashboardEvidence(fixturePath, {
-      failureDetails: "Running 1 test\nError stack\ntrace.zip\n/Users/private/source.ts",
-      failureHash: "a".repeat(64),
-      verdict: "REJECT",
-    }),
-    /raw output field/u,
-  )
-  await assert.rejects(
-    writeCoachDashboardEvidence(fixturePath, {
-      failureHash: "a".repeat(64),
-      reporterOutput: "arbitrary reporter transcript",
-      verdict: "REJECT",
-    }),
-    /raw output field|unexpected evidence field/u,
-  )
-  await assert.rejects(
-    writeCoachDashboardEvidence(fixturePath, {
-      failureHash: "a".repeat(64),
-      scenario: "Running 1 test\nError Context: trace.zip /Users/private/source.ts",
-      verdict: "REJECT",
-    }),
-    /raw output text/u,
-  )
+  const temporaryDirectory = await createTemporaryEvidenceDirectory()
+  const fixturePath = path.join(temporaryDirectory, "raw-output-rejected.json")
+  try {
+    await assert.rejects(
+      writeCoachDashboardEvidence(fixturePath, {
+        failureDetails: "Running 1 test\nError stack\ntrace.zip\n/Users/private/source.ts",
+        failureHash: "a".repeat(64),
+        verdict: "REJECT",
+      }),
+      /raw output field/u,
+    )
+    await assert.rejects(
+      writeCoachDashboardEvidence(fixturePath, {
+        failureHash: "a".repeat(64),
+        reporterOutput: "arbitrary reporter transcript",
+        verdict: "REJECT",
+      }),
+      /raw output field|unexpected evidence field/u,
+    )
+    await assert.rejects(
+      writeCoachDashboardEvidence(fixturePath, {
+        failureHash: "a".repeat(64),
+        scenario: "Running 1 test\nError Context: trace.zip /Users/private/source.ts",
+        verdict: "REJECT",
+      }),
+      /raw output text/u,
+    )
+  } finally {
+    await rm(temporaryDirectory, { force: true, recursive: true })
+  }
 })
 
 test("package exposes only the focused command and auth aggregate remains unchanged", async () => {
-  const [packageJson, aggregate, baseline] = await Promise.all([
+  const [packageJson, aggregate] = await Promise.all([
     readFile("package.json", "utf8").then(JSON.parse),
     readFile("tests/auth-ui-e2e/run.mjs", "utf8"),
-    readFile(".omo/evidence/coach-dashboard-screen/task-1/baseline.json", "utf8").then(JSON.parse),
   ])
 
   assert.equal(
     packageJson.scripts["test:e2e:coach-dashboard"],
     "node tests/auth-ui-e2e/run-coach-dashboard.mjs",
   )
+  assert.equal(packageJson.scripts["test:e2e:auth"].includes("coach-dashboard"), false)
   assert.equal(aggregate.includes("coach-dashboard"), false)
-  const aggregateBaseline = baseline.files.find(
-    (entry) => entry.path === "tests/auth-ui-e2e/run.mjs",
-  )
-  if (aggregateBaseline) assert.equal(aggregateBaseline.sha256.length, 64)
 })
 
 function createSuccessfulDependencies(observeEnv) {
@@ -290,4 +294,8 @@ function createSuccessfulDependencies(observeEnv) {
 function restoreEnvironment(name, value) {
   if (value === undefined) delete process.env[name]
   else process.env[name] = value
+}
+
+function createTemporaryEvidenceDirectory() {
+  return mkdtemp(path.join(os.tmpdir(), "spolink-coach-dashboard-evidence-"))
 }
