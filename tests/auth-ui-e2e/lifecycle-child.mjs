@@ -71,28 +71,45 @@ export async function startNextChild(
     ["pnpm", "exec", "next", "dev", "--webpack", "--hostname", "127.0.0.1", "--port", String(port)],
     {
       cwd: context.repoRoot,
-      env: buildChildEnv(process.env, {
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: status.anonKey,
-        NEXT_PUBLIC_SUPABASE_URL: status.apiUrl,
-        SUPABASE_SERVICE_ROLE_KEY: status.serviceRoleKey,
-        ...(process.env["SPOLINK_VISUAL_QA_DIR"]
-          ? { NEXT_PRIVATE_DISABLE_DEV_OVERLAY_UX: "1" }
-          : {}),
-        ...(enableCoachUiFixtures ? { SPOLINK_COACH_UI_FIXTURES: "enabled" } : {}),
-        ...(enableAdminOperationsUiFixtures
-          ? {
-              SPOLINK_AUTH_E2E_ADMIN_DASHBOARD_STATE: "enabled",
-              SPOLINK_AUTH_E2E_ADMIN_RESERVATION_STATE: "enabled",
-            }
-          : {}),
-        SPOLINK_AUTH_FLOW_SECRET: Buffer.alloc(32, 7).toString("base64url"),
-      }),
+      env: buildNextChildEnv(
+        process.env,
+        status,
+        enableCoachUiFixtures,
+        enableAdminOperationsUiFixtures,
+      ),
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
     },
   )
   outputCapture.attach(child)
   return { child, outputCapture }
+}
+
+export function buildNextChildEnv(
+  parentEnv,
+  status,
+  enableCoachUiFixtures,
+  enableAdminOperationsUiFixtures = false,
+) {
+  return buildChildEnv(parentEnv, {
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: status.anonKey,
+    NEXT_PUBLIC_SUPABASE_URL: status.apiUrl,
+    SUPABASE_SERVICE_ROLE_KEY: status.serviceRoleKey,
+    ...(parentEnv["SPOLINK_VISUAL_QA_DIR"] ? { NEXT_PRIVATE_DISABLE_DEV_OVERLAY_UX: "1" } : {}),
+    ...(enableCoachUiFixtures
+      ? {
+          SPOLINK_COACH_DASHBOARD_UI_FIXTURES: "enabled",
+          SPOLINK_COACH_UI_FIXTURES: "enabled",
+        }
+      : {}),
+    ...(enableAdminOperationsUiFixtures
+      ? {
+          SPOLINK_AUTH_E2E_ADMIN_DASHBOARD_STATE: "enabled",
+          SPOLINK_AUTH_E2E_ADMIN_RESERVATION_STATE: "enabled",
+        }
+      : {}),
+    SPOLINK_AUTH_FLOW_SECRET: Buffer.alloc(32, 7).toString("base64url"),
+  })
 }
 
 export async function waitForConfiguredState(baseUrl) {

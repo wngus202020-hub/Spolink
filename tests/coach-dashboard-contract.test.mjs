@@ -40,7 +40,8 @@ function assertDashboardPageContract(pagePath) {
   assert.match(page, /readApprovedCoachPage\("\/coach\/dashboard"\)/u)
   assert.match(page, /export const dynamic = "force-dynamic"/u)
   assert.match(page, /force-no-store/u)
-  assert.match(page, /SPOLINK_COACH_UI_FIXTURES/u)
+  assert.match(page, /SPOLINK_COACH_DASHBOARD_UI_FIXTURES/u)
+  assert.doesNotMatch(page, /SPOLINK_COACH_UI_FIXTURES/u)
   assert.match(page, /=== "enabled"/u)
   assert.ok(
     page.indexOf('readApprovedCoachPage("/coach/dashboard")') <
@@ -148,7 +149,10 @@ test("adversarial fixtures reject an unguarded UI state and public dashboard API
       fixturePage,
       `export const dynamic = "force-dynamic"\nexport const fetchCache = "force-no-store"\nawait readApprovedCoachPage("/coach/dashboard")\n${approvedNavigationDestinations.join("\n")}`,
     )
-    assert.throws(() => assertDashboardPageContract(fixturePage), /SPOLINK_COACH_UI_FIXTURES/u)
+    assert.throws(
+      () => assertDashboardPageContract(fixturePage),
+      /SPOLINK_COACH_DASHBOARD_UI_FIXTURES/u,
+    )
 
     mkdirSync(fixtureApi, { recursive: true })
     assert.throws(
