@@ -6,6 +6,15 @@ import { buildChildEnv, runBuffered, sha256 } from "./process.mjs"
 import { prepareRawPlaywrightOutputDir } from "./raw-output.mjs"
 
 const spec = "tests/auth-ui-e2e/coach-dashboard.spec.ts"
+const kstOffsetMilliseconds = 9 * 60 * 60 * 1_000
+
+export function defaultCoachDashboardEpoch(now) {
+  if (!(now instanceof Date) || !Number.isFinite(now.getTime())) {
+    throw new Error("A valid runner clock is required")
+  }
+  const kstDate = new Date(now.getTime() + kstOffsetMilliseconds).toISOString().slice(0, 10)
+  return `${kstDate}T03:00:00.000Z`
+}
 
 export async function executeCoachDashboardRun(options) {
   const dependencies = {
@@ -82,12 +91,14 @@ export async function executeCoachDashboardRun(options) {
     rawOutputCleanupHash = sha256(JSON.stringify(cleanup ?? { retained: false }))
   }
 
-  const visuals = await dependencies.collectVisuals(options.visualDir)
+  const visuals = await dependencies.collectVisuals(options.visualDir, options.grep ? 1 : 2)
   const fixtureCleanup = lifecycleSummary?.fixtureCleanup ?? null
   const approved =
     lifecycleSummary?.exitCode === 0 &&
     lifecycleErrorHash === null &&
-    fixtureCleanup?.dbRowsRemaining === 0 &&
+    fixtureCleanup?.coachProfilesRemaining === 0 &&
+    fixtureCleanup?.graphRowsRemaining === 0 &&
+    fixtureCleanup?.profilesRemaining === 0 &&
     fixtureCleanup?.usersRemaining === 0 &&
     visuals.verdict === "APPROVE"
   return {
@@ -113,7 +124,7 @@ async function runPlaywrightProcess({ args, env }) {
   return runBuffered("corepack", args, { env })
 }
 
-async function collectVisualEvidence(directory) {
+async function collectVisualEvidence(directory, expectedCount) {
   let names = []
   try {
     names = (await readdir(directory)).filter((name) => name.endsWith(".png")).sort()
@@ -128,7 +139,7 @@ async function collectVisualEvidence(directory) {
     if (!metadata.isFile() || metadata.size === 0) throw new Error("Invalid dashboard PNG")
     files.push({ bytes: metadata.size, name, sha256: sha256(await readFile(filePath)) })
   }
-  return { files, verdict: files.length === 1 ? "APPROVE" : "REJECT" }
+  return { files, verdict: files.length === expectedCount ? "APPROVE" : "REJECT" }
 }
 
 function readFixtureEvent(stdout) {
@@ -139,7 +150,9 @@ function readFixtureEvent(stdout) {
     const value = JSON.parse(line.slice(start + marker.length))
     if (
       typeof value?.scenario === "string" &&
-      Number.isInteger(value?.cleanup?.dbRowsRemaining) &&
+      Number.isInteger(value?.cleanup?.coachProfilesRemaining) &&
+      Number.isInteger(value?.cleanup?.graphRowsRemaining) &&
+      Number.isInteger(value?.cleanup?.profilesRemaining) &&
       Number.isInteger(value?.cleanup?.usersRemaining)
     ) {
       return value
