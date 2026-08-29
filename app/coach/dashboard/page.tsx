@@ -19,7 +19,7 @@ export default async function CoachDashboardPage({ searchParams }: Props) {
   const resolvedSearchParams: { readonly uiState?: string | readonly string[] } = searchParams
     ? await searchParams
     : {}
-  const fixturesEnabled = process.env["SPOLINK_COACH_DASHBOARD_UI_FIXTURES"] === "enabled"
+  const fixturesEnabled = process.env["SPOLINK_COACH_UI_FIXTURES"] === "enabled"
   const fixtureState =
     fixturesEnabled && typeof resolvedSearchParams.uiState === "string"
       ? resolvedSearchParams.uiState

@@ -17,6 +17,8 @@ const runtime = {
   createElement,
   dashboard: null,
   focusCount: 0,
+  routes: [],
+  search: "uiState=error",
 }
 
 globalThis[runtimeKey] = runtime
@@ -30,6 +32,12 @@ export default function Link({ children, href, ...props }) {
 }`,
   ],
   ["@/components/layout/public-header", "export function PublicHeader() { return null }"],
+  [
+    "next/navigation",
+    `const runtime = globalThis[Symbol.for("spolink.coach-dashboard-page-runtime")]
+export function usePathname() { return "/coach/dashboard" }
+export function useSearchParams() { return new URLSearchParams(runtime.search) }`,
+  ],
   [
     "@/lib/lessons/coach-authoring-page",
     `const runtime = globalThis[Symbol.for("spolink.coach-dashboard-page-runtime")]
@@ -237,15 +245,18 @@ test("renders section-specific empty states without mutating input", async () =>
   assert.equal(JSON.stringify(emptyDashboard), before)
 })
 
-test("fixture uiState is exact, scalar, and environment-gated", async (t) => {
+test("coach UI fixture uiState is exact, scalar, and environment-gated", async (t) => {
   const { default: CoachDashboardPage } = await loadRequiredModule("app/coach/dashboard/page.tsx")
-  const previous = process.env["SPOLINK_COACH_DASHBOARD_UI_FIXTURES"]
+  const originalEnvironment = process.env["SPOLINK_COACH_UI_FIXTURES"]
+  process.env["SPOLINK_COACH_UI_FIXTURES"] = "preseeded-fixture-value"
+  const previous = process.env["SPOLINK_COACH_UI_FIXTURES"]
   const scenarios = [
     [undefined, "error"],
     ["disabled", "loading"],
     ["enabled", ["error", "loading"]],
     ["enabled", "unexpected"],
   ]
+  let restoredFixtureEnvironment
 
   try {
     for (const [environment, uiState] of scenarios) {
@@ -294,7 +305,10 @@ test("fixture uiState is exact, scalar, and environment-gated", async (t) => {
     }
   } finally {
     setFixtureEnvironment(previous)
+    restoredFixtureEnvironment = process.env["SPOLINK_COACH_UI_FIXTURES"]
+    setFixtureEnvironment(originalEnvironment)
   }
+  assert.equal(restoredFixtureEnvironment, "preseeded-fixture-value")
 })
 
 test("loading and error states expose accessible operational recovery", async () => {
@@ -302,24 +316,54 @@ test("loading and error states expose accessible operational recovery", async ()
     "app/coach/dashboard/loading.tsx",
   )
   const { default: CoachDashboardError } = await loadRequiredModule("app/coach/dashboard/error.tsx")
+  const previousWindow = globalThis.window
   let resetCount = 0
   runtime.focusCount = 0
+  runtime.routes = []
+  runtime.search = "uiState=error"
 
-  const loadingHtml = renderToStaticMarkup(createElement(CoachDashboardLoading))
-  const errorElement = CoachDashboardError({ reset: () => (resetCount += 1) })
-  const errorHtml = renderToStaticMarkup(errorElement)
-  findClickableElement(errorElement).props.onClick()
+  globalThis.window = { location: { assign: (href) => runtime.routes.push(href) } }
+  try {
+    const loadingHtml = renderToStaticMarkup(createElement(CoachDashboardLoading))
+    runtime.search = "uiState=error&tab=overview"
+    const fixtureError = new Error("Deterministic coach dashboard error fixture")
+    fixtureError.name = "CoachDashboardFixtureError"
+    const errorElement = CoachDashboardError({
+      error: fixtureError,
+      reset: () => (resetCount += 1),
+    })
+    const errorHtml = renderToStaticMarkup(errorElement)
+    findClickableElement(errorElement).props.onClick()
 
-  assert.match(loadingHtml, /aria-busy="true"/u)
-  assert.match(loadingHtml, /role="status"/u)
-  assert.match(loadingHtml, /지도자 운영 현황을 불러오는 중입니다/u)
-  assert.equal(runtime.focusCount, 1)
-  assert.equal(resetCount, 1)
-  assert.match(errorHtml, /role="alert"/u)
-  assert.match(errorHtml, /tabindex="-1"/u)
-  assert.match(errorHtml, /지도자 운영 현황을 불러오지 못했어요/u)
-  assert.match(errorHtml, />다시 시도</u)
-  assert.doesNotMatch(errorHtml, /database|query|supabase|stack|error:/iu)
+    assert.match(loadingHtml, /aria-busy="true"/u)
+    assert.match(loadingHtml, /role="status"/u)
+    assert.match(loadingHtml, /지도자 운영 현황을 불러오는 중입니다/u)
+    assert.equal(runtime.focusCount, 1)
+    assert.equal(resetCount, 0)
+    assert.deepEqual(runtime.routes, ["/coach/dashboard?tab=overview"])
+
+    const ordinaryErrorElement = CoachDashboardError({
+      error: new Error("Ordinary dashboard read failure"),
+      reset: () => (resetCount += 1),
+    })
+    findClickableElement(ordinaryErrorElement).props.onClick()
+    assert.equal(resetCount, 1)
+    assert.deepEqual(runtime.routes, ["/coach/dashboard?tab=overview"])
+    console.log(
+      `DASHBOARD_ERROR_RECOVERY ${JSON.stringify({
+        fixtureRetry: { resetCalls: 0, route: "/coach/dashboard?tab=overview" },
+        ordinaryErrorWithUiState: { resetCalls: 1, routeChanges: 0 },
+      })}`,
+    )
+    assert.match(errorHtml, /role="alert"/u)
+    assert.match(errorHtml, /tabindex="-1"/u)
+    assert.match(errorHtml, /지도자 운영 현황을 불러오지 못했어요/u)
+    assert.match(errorHtml, />다시 시도</u)
+    assert.doesNotMatch(errorHtml, /database|query|supabase|stack|error:/iu)
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window
+    else globalThis.window = previousWindow
+  }
 })
 
 async function loadRequiredModule(path) {
@@ -333,8 +377,8 @@ function resetRuntime(dashboard) {
 }
 
 function setFixtureEnvironment(value) {
-  if (value === undefined) delete process.env["SPOLINK_COACH_DASHBOARD_UI_FIXTURES"]
-  else process.env["SPOLINK_COACH_DASHBOARD_UI_FIXTURES"] = value
+  if (value === undefined) delete process.env["SPOLINK_COACH_UI_FIXTURES"]
+  else process.env["SPOLINK_COACH_UI_FIXTURES"] = value
 }
 
 function readHrefs(html) {

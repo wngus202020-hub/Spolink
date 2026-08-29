@@ -1,17 +1,34 @@
 "use client"
 
+import { usePathname, useSearchParams } from "next/navigation"
 import { useEffect, useRef } from "react"
 
 import { Button } from "@/components/ui/button"
 
-type Props = Readonly<{ reset: () => void }>
+type Props = Readonly<{
+  error: Error
+  reset: () => void
+}>
 
-export default function CoachDashboardError({ reset }: Props) {
+export default function CoachDashboardError({ error, reset }: Props) {
   const headingRef = useRef<HTMLHeadingElement>(null)
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
 
   useEffect(() => {
     headingRef.current?.focus()
   }, [])
+
+  const retry = () => {
+    const nextSearchParams = new URLSearchParams(searchParams.toString())
+    nextSearchParams.delete("uiState")
+    const search = nextSearchParams.toString()
+    if (error.name === "CoachDashboardFixtureError") {
+      window.location.assign(search ? `${pathname}?${search}` : pathname)
+      return
+    }
+    reset()
+  }
 
   return (
     <main
@@ -25,7 +42,7 @@ export default function CoachDashboardError({ reset }: Props) {
         잠시 후 다시 시도해 주세요. 문제가 계속되면 고객센터에 문의해 주세요.
       </p>
       <div className="pt-2">
-        <Button onClick={reset}>다시 시도</Button>
+        <Button onClick={retry}>다시 시도</Button>
       </div>
     </main>
   )
