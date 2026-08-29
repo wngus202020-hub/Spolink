@@ -6,6 +6,8 @@ import { StatusBadge } from "@/components/ui/status-badge"
 import { readCoachDashboard } from "@/lib/coach/dashboard-read-model"
 import { readApprovedCoachPage } from "@/lib/lessons/coach-authoring-page"
 
+import CoachDashboardRecoveryView from "./coach-dashboard-recovery-view"
+
 export const dynamic = "force-dynamic"
 export const fetchCache = "force-no-store"
 export const revalidate = 0
@@ -29,7 +31,7 @@ export default async function CoachDashboardPage({ searchParams }: Props) {
     await new Promise((resolve) => setTimeout(resolve, 2_000))
   }
   if (fixtureState === "error") {
-    throw new CoachDashboardFixtureError()
+    return <CoachDashboardRecoveryView />
   }
 
   const dashboard = await readCoachDashboard({
@@ -62,11 +64,4 @@ export default async function CoachDashboardPage({ searchParams }: Props) {
       </div>
     </main>
   )
-}
-
-class CoachDashboardFixtureError extends Error {
-  constructor() {
-    super("Deterministic coach dashboard error fixture")
-    this.name = "CoachDashboardFixtureError"
-  }
 }

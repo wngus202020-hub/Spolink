@@ -64,14 +64,16 @@ registerHooks({
     if (url.endsWith(".ts") || url.endsWith(".tsx")) {
       const fileName = fileURLToPath(url)
       const fileSource = readFileSync(fileName, "utf8")
-      const source = url.endsWith("/app/coach/dashboard/error.tsx")
-        ? fileSource.replace(
-            'import { useEffect, useRef } from "react"',
-            `const runtime = globalThis[Symbol.for("spolink.coach-dashboard-page-runtime")]
+      const source =
+        url.endsWith("/app/coach/dashboard/error.tsx") ||
+        url.endsWith("/app/coach/dashboard/coach-dashboard-recovery-view.tsx")
+          ? fileSource.replace(
+              'import { useEffect, useRef } from "react"',
+              `const runtime = globalThis[Symbol.for("spolink.coach-dashboard-page-runtime")]
 const useEffect = (effect) => effect()
 const useRef = () => ({ current: { focus() { runtime.focusCount += 1 } } })`,
-          )
-        : fileSource
+            )
+          : fileSource
       const result = typescript.transpileModule(source, {
         compilerOptions: {
           jsx: typescript.JsxEmit.ReactJSX,
@@ -276,10 +278,11 @@ test("coach UI fixture uiState is exact, scalar, and environment-gated", async (
 
     setFixtureEnvironment("enabled")
     resetRuntime(emptyDashboard)
-    await assert.rejects(
-      CoachDashboardPage({ searchParams: Promise.resolve({ uiState: "error" }) }),
-      /Deterministic coach dashboard error fixture/u,
+    const errorFixtureHtml = renderToStaticMarkup(
+      await CoachDashboardPage({ searchParams: Promise.resolve({ uiState: "error" }) }),
     )
+    assert.match(errorFixtureHtml, /role="alert"/u)
+    assert.match(errorFixtureHtml, /지도자 운영 현황을 불러오지 못했어요/u)
     assert.deepEqual(runtime.calls, [["auth", "/coach/dashboard"]])
 
     const originalSetTimeout = globalThis.setTimeout
@@ -316,6 +319,9 @@ test("loading and error states expose accessible operational recovery", async ()
     "app/coach/dashboard/loading.tsx",
   )
   const { default: CoachDashboardError } = await loadRequiredModule("app/coach/dashboard/error.tsx")
+  const { default: CoachDashboardRecoveryView } = await loadRequiredModule(
+    "app/coach/dashboard/coach-dashboard-recovery-view.tsx",
+  )
   const previousWindow = globalThis.window
   let resetCount = 0
   runtime.focusCount = 0
@@ -332,27 +338,32 @@ test("loading and error states expose accessible operational recovery", async ()
       error: fixtureError,
       reset: () => (resetCount += 1),
     })
+    const errorRecoveryElement = errorElement.type(errorElement.props)
     const errorHtml = renderToStaticMarkup(errorElement)
-    findClickableElement(errorElement).props.onClick()
+    findClickableElement(errorRecoveryElement).props.onClick()
+
+    const fixtureRecoveryElement = CoachDashboardRecoveryView({})
+    findClickableElement(fixtureRecoveryElement).props.onClick()
 
     assert.match(loadingHtml, /aria-busy="true"/u)
     assert.match(loadingHtml, /role="status"/u)
     assert.match(loadingHtml, /지도자 운영 현황을 불러오는 중입니다/u)
-    assert.equal(runtime.focusCount, 1)
-    assert.equal(resetCount, 0)
+    assert.equal(runtime.focusCount, 3)
+    assert.equal(resetCount, 1)
     assert.deepEqual(runtime.routes, ["/coach/dashboard?tab=overview"])
 
     const ordinaryErrorElement = CoachDashboardError({
       error: new Error("Ordinary dashboard read failure"),
       reset: () => (resetCount += 1),
     })
-    findClickableElement(ordinaryErrorElement).props.onClick()
-    assert.equal(resetCount, 1)
+    const ordinaryRecoveryElement = ordinaryErrorElement.type(ordinaryErrorElement.props)
+    findClickableElement(ordinaryRecoveryElement).props.onClick()
+    assert.equal(resetCount, 2)
     assert.deepEqual(runtime.routes, ["/coach/dashboard?tab=overview"])
     console.log(
       `DASHBOARD_ERROR_RECOVERY ${JSON.stringify({
-        fixtureRetry: { resetCalls: 0, route: "/coach/dashboard?tab=overview" },
-        ordinaryErrorWithUiState: { resetCalls: 1, routeChanges: 0 },
+        fixtureRecovery: { route: "/coach/dashboard?tab=overview" },
+        errorBoundary: { resetCalls: 2, routeChanges: 0 },
       })}`,
     )
     assert.match(errorHtml, /role="alert"/u)

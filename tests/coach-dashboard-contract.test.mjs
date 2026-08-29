@@ -27,7 +27,9 @@ const dashboardStatePaths = [
   "app/coach/dashboard/page.tsx",
   "app/coach/dashboard/loading.tsx",
   "app/coach/dashboard/error.tsx",
+  "app/coach/dashboard/coach-dashboard-recovery-view.tsx",
 ]
+const dashboardRecoveryViewPath = "app/coach/dashboard/coach-dashboard-recovery-view.tsx"
 const approvedNavigationDestinations = [
   "/coach/lessons/new",
   "/coach/lessons",
@@ -65,6 +67,26 @@ function assertDashboardPresentationContract(componentPaths) {
     assert.ok(source.includes(destination), destination)
   }
   assert.doesNotMatch(source, /service.role|service_role|createSupabaseServiceClient/u)
+}
+
+function assertDashboardFixtureRecoveryContract() {
+  const page = readFileSync(dashboardPagePath, "utf8")
+  const errorBoundary = readFileSync("app/coach/dashboard/error.tsx", "utf8")
+  const recoveryView = readFileSync(dashboardRecoveryViewPath, "utf8")
+
+  assert.match(page, /import CoachDashboardRecoveryView from "\.\/coach-dashboard-recovery-view"/u)
+  assert.match(
+    page,
+    /if \(fixtureState === "error"\) \{\s*return <CoachDashboardRecoveryView \/>\s*\}/u,
+  )
+  assert.doesNotMatch(page, /CoachDashboardFixtureError/u)
+  assert.match(errorBoundary, /<CoachDashboardRecoveryView onRetry=\{reset\} \/>/u)
+  assert.doesNotMatch(errorBoundary, /CoachDashboardFixtureError/u)
+  assert.match(recoveryView, /^"use client"/u)
+  assert.match(recoveryView, /nextSearchParams\.delete\("uiState"\)/u)
+  assert.match(recoveryView, /window\.location\.assign\(/u)
+  assert.match(recoveryView, /role="alert"/u)
+  assert.match(recoveryView, /tabIndex=\{-1\}/u)
 }
 
 function assertNoPublicDashboardSurface(apiPath, migrationsPath) {
@@ -108,6 +130,10 @@ test("Todo 4 dashboard route uses the approved-coach boundary before rendering",
 test("Todo 4 dashboard UI fixtures are guarded and quick actions are approved", () => {
   assertDashboardPageContract(dashboardPagePath)
   assertDashboardPresentationContract(dashboardComponentPaths)
+})
+
+test("Todo 8 fixture error renders recovery directly and real errors retain reset semantics", () => {
+  assertDashboardFixtureRecoveryContract()
 })
 
 test("Todo 4 dashboard uses no arbitrary numeric typography spacing or layout utilities", () => {
