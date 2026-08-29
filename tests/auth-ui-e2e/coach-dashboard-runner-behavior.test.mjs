@@ -20,7 +20,7 @@ test("runner reuses one lifecycle, one worker, supplied epoch, and grep passthro
   const observed = { lifecycleCalls: 0, lifecycleCleaned: false, playwright: null }
   const result = await executeCoachDashboardRun({
     epoch,
-    grep: "smoke foundation",
+    grep: "populated|navigation",
     outputPath: path.join(fakeOutputRoot, "fake-summary.json"),
     visualDir: path.join(fakeOutputRoot, "fake-visual"),
     dependencies: {
@@ -44,7 +44,7 @@ test("runner reuses one lifecycle, one worker, supplied epoch, and grep passthro
   assert.equal(observed.lifecycleCleaned, true)
   assert.ok(observed.playwright)
   assert.match(observed.playwright.args.join(" "), /--workers 1/u)
-  assert.match(observed.playwright.args.join(" "), /--grep smoke foundation/u)
+  assert.match(observed.playwright.args.join(" "), /--grep populated\|navigation/u)
   assert.equal(observed.playwright.env.SPOLINK_COACH_DASHBOARD_EPOCH, epoch)
   assert.equal("SPOLINK_COACH_DASHBOARD_INJECT_FAILURE" in observed.playwright.env, false)
   assert.equal("SPOLINK_COACH_DASHBOARD_RUNNER_CONTRACT" in observed.playwright.env, false)
@@ -60,6 +60,7 @@ test("injected failure remains nonzero and preserves all four cleanup counters",
     allowInjectedFailure: true,
     epoch,
     failurePoint: "after-seed",
+    grep: "populated|navigation",
     outputPath: path.join(fakeOutputRoot, "failure-summary.json"),
     visualDir: path.join(fakeOutputRoot, "failure-visual"),
     dependencies: {
@@ -88,6 +89,8 @@ test("injected failure remains nonzero and preserves all four cleanup counters",
   })
 
   assert.equal(result.exitCode, 1)
+  assert.equal(result.failureClass, "playwright")
+  assert.equal(result.fixtureRuns, 1)
   assert.equal(result.verdict, "REJECT")
   assert.deepEqual(result.fixtureCleanup, cleanFixture)
   assert.deepEqual(cleanup.sort(), ["lifecycle", "raw"])
@@ -165,6 +168,7 @@ test("focused contract inventory stays split and independent of evidence files",
     "coach-dashboard-evidence-security.test.mjs",
     "coach-dashboard-fixture-plan.test.mjs",
     "coach-dashboard-png.test.mjs",
+    "coach-dashboard-run-shape.test.mjs",
     "coach-dashboard-runner-behavior.test.mjs",
     "coach-dashboard-task8-reports.test.mjs",
     "coach-dashboard-visual-contract.test.mjs",

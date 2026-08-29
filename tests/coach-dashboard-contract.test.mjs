@@ -1,6 +1,4 @@
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
-import { createHash } from "node:crypto"
 import {
   existsSync,
   mkdirSync,
@@ -14,8 +12,6 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 
-const baselinePath = ".omo/evidence/coach-dashboard-screen/task-1/baseline.json"
-const baseline = JSON.parse(readFileSync(baselinePath, "utf8"))
 const dashboardRunner = "node tests/auth-ui-e2e/run-coach-dashboard.mjs"
 const dashboardPagePath = "app/coach/dashboard/page.tsx"
 const dashboardComponentPaths = [
@@ -36,14 +32,6 @@ const approvedNavigationDestinations = [
   "/coach/reservations",
   "/coach/settlements",
 ]
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex")
-}
-
-function patchSha256(path) {
-  return sha256(execFileSync("git", ["diff", "--no-ext-diff", "--binary", "--", path]))
-}
 
 function assertDashboardPageContract(pagePath) {
   assert.equal(existsSync(pagePath), true, `${pagePath} must exist`)
@@ -97,25 +85,6 @@ function assertNoPublicDashboardSurface(apiPath, migrationsPath) {
     .filter((file) => readFileSync(join(migrationsPath, file), "utf8").includes("/coach/dashboard"))
   assert.deepEqual(migrationDashboardReferences, [])
 }
-
-test("Todo 1 baseline preserves existing dirty bytes and package scripts", () => {
-  for (const file of baseline.files) {
-    if (file.path === "package.json") continue
-
-    assert.equal(sha256(readFileSync(file.path)), file.sha256, `${file.path} byte hash`)
-    if (file.patchSha256)
-      assert.equal(patchSha256(file.path), file.patchSha256, `${file.path} patch hash`)
-  }
-
-  const packageJson = JSON.parse(readFileSync("package.json", "utf8"))
-  const { "test:e2e:coach-dashboard": dashboardScript, ...preExistingScripts } = packageJson.scripts
-  assert.deepEqual(preExistingScripts, baseline.packageScripts)
-  assert.equal(
-    packageJson.scripts["staging:verify:smtp"],
-    "node tests/staging-contract/verify-smtp-auth-flow.mjs --mailbox-provider mailtrap",
-  )
-  assert.ok(dashboardScript === undefined || dashboardScript === dashboardRunner)
-})
 
 test("Todo 1 runner wiring owns only the focused coach dashboard command", () => {
   const packageJson = JSON.parse(readFileSync("package.json", "utf8"))

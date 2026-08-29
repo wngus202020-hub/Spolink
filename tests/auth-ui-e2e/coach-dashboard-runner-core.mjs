@@ -1,8 +1,11 @@
 import path from "node:path"
+import {
+  resolveCoachDashboardRunShape,
+  resolveCoachDashboardRunTarget,
+} from "./coach-dashboard-run-target.mjs"
 import { collectBasicCoachDashboardVisuals } from "./coach-dashboard-runner-visuals.mjs"
 import {
   collectCoachDashboardVisualEvidence,
-  isCoachDashboardVisualGrep,
   prepareCoachDashboardVisualDirectory,
   readCoachDashboardVisualSourceBinding,
   visualScreenshotNames,
@@ -23,7 +26,9 @@ export function defaultCoachDashboardEpoch(now) {
 }
 
 export async function executeCoachDashboardRun(options) {
-  const visualRun = isCoachDashboardVisualGrep(options.grep)
+  const runTarget = resolveCoachDashboardRunTarget(options.grep)
+  const runShape = resolveCoachDashboardRunShape(runTarget)
+  const visualRun = runTarget.variant === "visual-responsive"
   const dependencies = {
     collectBasicVisuals: collectBasicCoachDashboardVisuals,
     collectVisuals: collectCoachDashboardVisualEvidence,
@@ -53,9 +58,6 @@ export async function executeCoachDashboardRun(options) {
           runId: `coach-dashboard-${sha256(options.epoch).slice(0, 12)}-${process.pid}`,
         },
         async ({ baseUrl, status }) => {
-          const projects = visualRun
-            ? ["desktop-chromium", "mobile-chromium", "tablet-chromium"]
-            : ["desktop-chromium"]
           const args = [
             "pnpm",
             "exec",
@@ -63,7 +65,7 @@ export async function executeCoachDashboardRun(options) {
             "test",
             "--config=playwright.auth.config.ts",
             spec,
-            ...projects.map((project) => `--project=${project}`),
+            ...runShape.projects.map((project) => `--project=${project}`),
             "--workers",
             "1",
             ...(options.grep ? ["--grep", options.grep] : []),
@@ -115,9 +117,8 @@ export async function executeCoachDashboardRun(options) {
         expectedNames: visualScreenshotNames,
         freshnessFloorMs: sourceBinding?.latestMtimeMs,
       })
-    : await dependencies.collectBasicVisuals(options.visualDir, options.grep ? 1 : 7)
+    : await dependencies.collectBasicVisuals(options.visualDir, runShape.expectedScreenshots)
   const fixtureCleanup = lifecycleSummary?.fixtureCleanup ?? null
-  const expectedFixtureRuns = visualRun ? 3 : 1
   const approved =
     lifecycleSummary?.exitCode === 0 &&
     lifecycleErrorHash === null &&
@@ -125,7 +126,7 @@ export async function executeCoachDashboardRun(options) {
     fixtureCleanup?.graphRowsRemaining === 0 &&
     fixtureCleanup?.profilesRemaining === 0 &&
     fixtureCleanup?.usersRemaining === 0 &&
-    lifecycleSummary?.fixtureRuns === expectedFixtureRuns &&
+    lifecycleSummary?.fixtureRuns === runShape.expectedFixtureRuns &&
     (!visualRun || lifecycleSummary?.visualChecks?.verdict === "APPROVE") &&
     visuals.verdict === "APPROVE"
   return {
