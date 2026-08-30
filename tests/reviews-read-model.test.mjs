@@ -348,7 +348,7 @@ test("review modules stay strict bounded and expose only the intended facade", a
     assert.ok(source.split("\n").length < 250)
     assert.doesNotMatch(
       source,
-      /\bas\s+(?:any|unknown)\b|@ts-(?:ignore|expect-error)|:\s*any\b|(?<![=!])!(?=[.;,\)])/u,
+      /\bas\s+(?:any|unknown)\b|@ts-(?:ignore|expect-error)|:\s*any\b|(?<![=!])!(?=[.;,)])/u,
     )
   }
 })

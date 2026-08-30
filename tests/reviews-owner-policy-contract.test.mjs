@@ -2,8 +2,7 @@ import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import test from "node:test"
 
-const lifecycleMigrationPath =
-  "supabase/migrations/20260814130000_add_review_lifecycle.sql"
+const lifecycleMigrationPath = "supabase/migrations/20260814130000_add_review_lifecycle.sql"
 const ownerPolicyMigrationPath =
   "supabase/migrations/20260831000000_add_owner_review_history_policy.sql"
 
