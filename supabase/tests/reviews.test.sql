@@ -102,6 +102,12 @@ select has_function('public', 'hide_review', array['uuid', 'text'], 'admin hide 
 select ok(not has_table_privilege('authenticated', 'public.reviews', 'INSERT'), 'authenticated cannot insert reviews directly');
 select ok(not has_table_privilege('authenticated', 'public.reviews', 'UPDATE'), 'authenticated cannot update reviews directly');
 select ok(not has_table_privilege('authenticated', 'public.reviews', 'DELETE'), 'authenticated cannot delete reviews directly');
+select is((select count(*) from pg_policies where schemaname = 'public' and tablename = 'reviews' and policyname = 'reviews_public_visible_only'), 1::bigint, 'public visible review policy remains present exactly once');
+select is((select permissive || '/' || cmd || '/' || array_to_string(roles, ',') from pg_policies where schemaname = 'public' and tablename = 'reviews' and policyname = 'reviews_public_visible_only'), 'PERMISSIVE/SELECT/anon,authenticated', 'public review policy remains a permissive anon and authenticated select');
+select ok((select qual = '(status = ''visible''::review_status)' from pg_policies where schemaname = 'public' and tablename = 'reviews' and policyname = 'reviews_public_visible_only'), 'public review policy remains visible only');
+select is((select count(*) from pg_policies where schemaname = 'public' and tablename = 'reviews' and policyname = 'reviews_owner_visible_hidden_select'), 1::bigint, 'owner review history policy exists exactly once');
+select is((select permissive || '/' || cmd || '/' || array_to_string(roles, ',') from pg_policies where schemaname = 'public' and tablename = 'reviews' and policyname = 'reviews_owner_visible_hidden_select'), 'PERMISSIVE/SELECT/authenticated', 'owner review history policy is a permissive authenticated select');
+select ok((select qual like '%reviewer_id = ( SELECT auth.uid()%' and qual like '%''visible''::review_status%' and qual like '%''hidden''::review_status%' and qual not like '%''deleted''::review_status%' from pg_policies where schemaname = 'public' and tablename = 'reviews' and policyname = 'reviews_owner_visible_hidden_select'), 'owner review history policy scopes uid to visible and hidden only');
 
 select pg_temp.set_task5_auth(pg_temp.task5_id('learner'));
 set local role authenticated;
@@ -135,6 +141,36 @@ select throws_ok($$update public.reviews set status = 'visible' where id = (sele
 select throws_ok($$delete from public.reviews where id = (select review_id from task5_review)$$, '42501', null, 'direct review delete is denied');
 reset role;
 
+insert into public.reviews (id, reservation_id, lesson_id, coach_profile_id, reviewer_id, status, rating, content, hidden_reason)
+select '57500000-0000-4000-8000-000000000001'::uuid, reservation_id, lesson_id, coach_profile_id, learner_id, 'visible'::public.review_status, 5, 'owner visible'::text, null::text from task5_case where case_key = 'invalid'
+union all
+select '57500000-0000-4000-8000-000000000002'::uuid, reservation_id, lesson_id, coach_profile_id, learner_id, 'deleted'::public.review_status, 3, 'owner deleted'::text, null::text from task5_case where case_key = 'no_show'
+union all
+select '57500000-0000-4000-8000-000000000003'::uuid, reservation_id, lesson_id, coach_profile_id, learner_id, 'hidden'::public.review_status, 4, 'foreign hidden'::text, '정책 위반'::text from task5_case where case_key = 'foreign'
+union all
+select '57500000-0000-4000-8000-000000000004'::uuid, reservation_id, lesson_id, coach_profile_id, pg_temp.task5_id('foreign'), 'deleted'::public.review_status, 2, 'foreign deleted'::text, null::text from task5_case where case_key = 'self_review';
+
+select pg_temp.set_task5_auth(pg_temp.task5_id('learner'));
+set local role authenticated;
+select is((select count(*) from public.reviews where reviewer_id = pg_temp.task5_id('learner') and status in ('visible', 'hidden')), 2::bigint, 'owner reads exactly their visible and hidden reviews');
+select is((select count(*) from public.reviews where reviewer_id = pg_temp.task5_id('learner') and status = 'deleted'), 0::bigint, 'owner cannot read their deleted review');
+select is((select count(*) from public.reviews where reviewer_id = pg_temp.task5_id('foreign') and status = 'hidden'), 0::bigint, 'owner cannot read another learner hidden review');
+select throws_ok($$update public.reviews set content = 'forged' where id = '57500000-0000-4000-8000-000000000001'$$, '42501', null, 'owner direct review update remains denied');
+select throws_ok($$delete from public.reviews where id = '57500000-0000-4000-8000-000000000001'$$, '42501', null, 'owner direct review delete remains denied');
+reset role;
+
+select pg_temp.set_task5_auth(pg_temp.task5_id('foreign'));
+set local role authenticated;
+select is((select count(*) from public.reviews where reviewer_id = pg_temp.task5_id('learner') and status in ('hidden', 'deleted')), 0::bigint, 'another learner cannot read foreign hidden or deleted reviews');
+select is((select count(*) from public.reviews where reviewer_id = pg_temp.task5_id('foreign') and status = 'hidden'), 1::bigint, 'another learner can read their own hidden review');
+reset role;
+
+select pg_temp.set_task5_auth(pg_temp.task5_id('admin'));
+set local role authenticated;
+select is((select count(*) from public.reviews where id = '57500000-0000-4000-8000-000000000001'), 1::bigint, 'admin retains public visible review access');
+select is((select count(*) from public.reviews where reviewer_id = pg_temp.task5_id('learner') and status in ('hidden', 'deleted')), 0::bigint, 'admin gains no hidden or deleted review access');
+reset role;
+
 select pg_temp.set_task5_auth(pg_temp.task5_id('inactive_admin'));
 set local role authenticated;
 select throws_ok($$select public.hide_review((select review_id from task5_review), 'inactive')$$, '42501', 'Active administrator required.', 'inactive admin cannot hide');
@@ -142,6 +178,8 @@ reset role;
 
 set local role anon;
 select is((select count(*) from public.reviews where id = (select review_id from task5_review)), 0::bigint, 'hidden review is omitted from public reads');
+select is((select count(*) from public.reviews where id = '57500000-0000-4000-8000-000000000001'), 1::bigint, 'anonymous users retain public visible review access');
+select is((select count(*) from public.reviews where reviewer_id = '57000000-0000-4000-8000-000000000003' and status in ('hidden', 'deleted')), 0::bigint, 'anonymous users cannot read hidden or deleted reviews');
 reset role;
 
 select * from finish();
