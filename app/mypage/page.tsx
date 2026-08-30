@@ -198,20 +198,29 @@ export default async function MyPage() {
               </span>
             </Link>
 
-            <article className="grid min-h-48 content-between gap-5 rounded-[var(--radius-xl)] border border-line bg-subtle p-5 md:p-6">
-              <div className="flex items-start justify-between gap-4">
-                <span className="inline-flex size-12 items-center justify-center rounded-[var(--radius-lg)] bg-inset text-primary">
-                  <MessageSquare aria-hidden="true" className="size-6" strokeWidth={1.8} />
+            <Link
+              aria-label="리뷰 관리로 이동"
+              className="group grid min-h-48 content-between gap-5 rounded-[var(--radius-xl)] border border-line bg-canvas p-5 hover:bg-subtle md:p-6"
+              href="/mypage/reviews"
+            >
+              <span className="inline-flex size-12 items-center justify-center rounded-[var(--radius-lg)] bg-inset text-primary">
+                <MessageSquare aria-hidden="true" className="size-6" strokeWidth={1.8} />
+              </span>
+              <span className="grid gap-3">
+                <span className="grid gap-1">
+                  <strong className="text-[22px] font-bold leading-[1.36] text-primary">
+                    리뷰 관리
+                  </strong>
+                  <span className="text-sm leading-[1.6] text-secondary">
+                    참여한 레슨의 리뷰 작성과 내역을 관리해요.
+                  </span>
                 </span>
-                <StatusBadge tone="neutral">준비중</StatusBadge>
-              </div>
-              <div className="grid gap-1">
-                <h3 className="m-0 text-[22px] font-bold leading-[1.36] text-primary">리뷰 관리</h3>
-                <p className="m-0 text-sm leading-[1.6] text-secondary">
-                  참여한 레슨의 리뷰 작성과 내역 관리를 준비하고 있어요.
-                </p>
-              </div>
-            </article>
+                <span className="inline-flex min-h-11 w-fit items-center gap-2 text-sm font-bold text-primary">
+                  리뷰 내역 보기
+                  <ArrowRight aria-hidden="true" className="size-4" strokeWidth={1.8} />
+                </span>
+              </span>
+            </Link>
 
             <Link
               aria-label={coachNavigation.ariaLabel}

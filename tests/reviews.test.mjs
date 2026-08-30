@@ -36,6 +36,20 @@ test("review contracts accept only bounded learner input and reject forged autho
   )
 })
 
+test("review form exposes the history link only after a successful review write without navigation", async () => {
+  const source = await readFile("components/reviews/review-form.tsx", "utf8")
+
+  assert.match(source, /response\.ok[\s\S]*?setContent\(""\)/u)
+  assert.match(
+    source,
+    /response\.ok[\s\S]*?<Link[\s\S]*?href="\/mypage\/reviews"[\s\S]*?>[\s\S]*?내 리뷰 보기/u,
+  )
+  assert.doesNotMatch(
+    source,
+    /(?:router\.(?:push|replace)|window\.location\.(?:assign|replace|href))/u,
+  )
+})
+
 test("review workflow maps duplicate, stale, foreign, and unauthorized persistence failures", async () => {
   const { runCreateReview, runHideReview } = await import("../lib/reviews/workflow.ts")
   const dependencies = {

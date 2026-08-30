@@ -28,10 +28,17 @@ test("My Page home links implemented personal activity routes", async () => {
   assert.match(page, /aria-label="내 정보 수정으로 이동"/u)
   assert.match(page, /href="\/mypage\/profile"/u)
   assert.doesNotMatch(personalInfoCard, /준비중/u)
+  const reviewCard =
+    page.match(
+      /<Link\s+aria-label="리뷰 관리로 이동"[\s\S]*?<MessageSquare[\s\S]*?<\/Link>/u,
+    )?.[0] ?? ""
   assert.match(
-    page,
-    /<h3 className="m-0 text-\[22px\][\s\S]*?리뷰 관리[\s\S]*?<StatusBadge tone="neutral">준비중<\/StatusBadge>|<StatusBadge tone="neutral">준비중<\/StatusBadge>[\s\S]*?<h3 className="m-0 text-\[22px\][\s\S]*?리뷰 관리/u,
+    reviewCard,
+    /<Link[\s\S]*?aria-label="리뷰 관리로 이동"[\s\S]*?href="\/mypage\/reviews"/u,
   )
+  assert.match(reviewCard, /리뷰 내역 보기/u)
+  assert.doesNotMatch(reviewCard, /준비중/u)
+  assert.equal((page.match(/href="\/mypage\/reviews"/gu) ?? []).length, 1)
   assert.match(page, /href="\/mypage\/notifications"/u)
   assert.match(page, /href="\/mypage\/reservations"/u)
   assert.match(page, /href="\/mypage\/favorites"/u)

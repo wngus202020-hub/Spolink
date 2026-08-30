@@ -1,19 +1,25 @@
 "use client"
 
 import { Star } from "lucide-react"
-import { useState } from "react"
+import Link from "next/link"
+import { useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 
 export function ReviewForm({ reservationId }: Readonly<{ reservationId: string }>) {
   const [rating, setRating] = useState(5)
   const [content, setContent] = useState("")
   const [message, setMessage] = useState<string | null>(null)
+  const [isError, setIsError] = useState(false)
   const [pending, setPending] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const messageRef = useRef<HTMLParagraphElement>(null)
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setPending(true)
     setMessage(null)
+    setIsError(false)
+    setSubmitted(false)
     try {
       const response = await fetch("/api/reviews", {
         body: JSON.stringify({ content, rating, reservationId }),
@@ -21,12 +27,19 @@ export function ReviewForm({ reservationId }: Readonly<{ reservationId: string }
         headers: { "Content-Type": "application/json", Origin: window.location.origin },
         method: "POST",
       })
-      setMessage(
-        response.ok ? "후기를 등록했어요." : "후기를 등록하지 못했어요. 예약 상태를 확인해 주세요.",
-      )
-      if (response.ok) setContent("")
+      if (response.ok) {
+        setMessage("후기를 등록했어요.")
+        setContent("")
+        setSubmitted(true)
+        return
+      }
+      setMessage("후기를 등록하지 못했어요. 예약 상태를 확인해 주세요.")
+      setIsError(true)
+      requestAnimationFrame(() => messageRef.current?.focus())
     } catch {
       setMessage("잠시 후 다시 시도해 주세요.")
+      setIsError(true)
+      requestAnimationFrame(() => messageRef.current?.focus())
     } finally {
       setPending(false)
     }
@@ -73,10 +86,17 @@ export function ReviewForm({ reservationId }: Readonly<{ reservationId: string }
         {pending ? "등록 중..." : "후기 등록"}
       </Button>
       {message ? (
-        <p aria-live="polite" className="m-0 text-sm text-secondary" role="status">
+        <p
+          aria-live={isError ? "assertive" : "polite"}
+          className="m-0 text-sm text-secondary"
+          ref={messageRef}
+          role={isError ? "alert" : "status"}
+          tabIndex={isError ? -1 : undefined}
+        >
           {message}
         </p>
       ) : null}
+      {submitted ? <Link href="/mypage/reviews">내 리뷰 보기</Link> : null}
     </form>
   )
 }
