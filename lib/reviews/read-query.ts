@@ -67,7 +67,26 @@ async function readOwnedReviews(
     .order("id", { ascending: false })
     .range(firstRow, lastRow)
 
-  if (result.error) return { kind: "read_failure" }
+  return mapOwnedReviewQueryResult(result, async () => {
+    const recount = await supabase
+      .from("reviews")
+      .select("id", { count: "exact", head: true })
+      .eq("reviewer_id", learnerId)
+      .in("status", ["visible", "hidden"])
+    return { count: recount.count, error: recount.error }
+  })
+}
+
+export async function mapOwnedReviewQueryResult(
+  result: OwnedReviewQueryResult,
+  recount: () => Promise<OwnedReviewCountResult>,
+): Promise<OwnedReviewsReadResult> {
+  if (result.error) {
+    if (result.error.code !== "PGRST103") return { kind: "read_failure" }
+    const countResult = await recount()
+    if (countResult.error || countResult.count === null) return { kind: "read_failure" }
+    return { kind: "found", reviews: [], totalCount: countResult.count }
+  }
   const reviews = (result.data ?? []).flatMap(mapOwnedReview)
   return {
     kind: "found",
@@ -75,6 +94,16 @@ async function readOwnedReviews(
     totalCount: result.count ?? reviews.length,
   }
 }
+
+type OwnedReviewCountResult = Readonly<{
+  count: number | null
+  error: Readonly<{ code: string }> | null
+}>
+
+type OwnedReviewQueryResult = OwnedReviewCountResult &
+  Readonly<{
+    data: readonly OwnedReviewRow[] | null
+  }>
 
 async function enrichOwnedReviews(
   lessonIds: readonly string[],
@@ -102,7 +131,7 @@ async function enrichOwnedReviews(
   }
 }
 
-function mapOwnedReview(row: {
+type OwnedReviewRow = Readonly<{
   coach_profile_id: string
   content: string | null
   created_at: string
@@ -111,7 +140,9 @@ function mapOwnedReview(row: {
   lesson_id: string
   rating: number
   status: "deleted" | "hidden" | "visible"
-}): readonly ReviewHistorySnapshot[] {
+}>
+
+function mapOwnedReview(row: OwnedReviewRow): readonly ReviewHistorySnapshot[] {
   if (row.status === "deleted") return []
   return [
     {

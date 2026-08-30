@@ -12,6 +12,7 @@ const workspace = mkdtempSync(path.join(tmpdir(), "spolink-review-read-"))
 const output = path.join(workspace, "dist")
 const config = path.join(workspace, "tsconfig.json")
 const compiledModel = path.join(output, "lib/reviews/read-model.js")
+const compiledQuery = path.join(output, "lib/reviews/read-query.js")
 let compiled = false
 
 writeFileSync(
@@ -46,6 +47,14 @@ async function importReviewModel(name) {
   }
   const loaded = await import(
     `${pathToFileURL(compiledModel).href}?test=${encodeURIComponent(name)}`
+  )
+  return loaded.default
+}
+
+async function importReviewQuery(name) {
+  await importReviewModel(`query-dependency-${name}`)
+  const loaded = await import(
+    `${pathToFileURL(compiledQuery).href}?test=${encodeURIComponent(name)}`
   )
   return loaded.default
 }
@@ -138,6 +147,35 @@ test("review history distinguishes empty out of range and unavailable reads", as
   )
   assert.equal(actual[2].viewModel, null)
   assert.equal(actual[3].viewModel, null)
+})
+
+test("unsatisfiable PostgREST range recounts ownership while real errors stay failed", async () => {
+  // Given: the actual local response shape for a range beyond one owned row.
+  const { mapOwnedReviewQueryResult } = await importReviewQuery("range-recount")
+  const rangeFailure = {
+    count: null,
+    data: null,
+    error: { code: "PGRST103" },
+  }
+  let recountCalls = 0
+
+  // When: the range failure and a real repository error cross the query mapping boundary.
+  const recovered = await mapOwnedReviewQueryResult(rangeFailure, async () => {
+    recountCalls += 1
+    return { count: 21, error: null }
+  })
+  const failed = await mapOwnedReviewQueryResult(
+    { count: null, data: null, error: { code: "42501" } },
+    async () => {
+      recountCalls += 1
+      return { count: 21, error: null }
+    },
+  )
+
+  // Then: only PGRST103 becomes a count-bearing empty page for data classification.
+  assert.deepEqual(recovered, { kind: "found", reviews: [], totalCount: 21 })
+  assert.deepEqual(failed, { kind: "read_failure" })
+  assert.equal(recountCalls, 1)
 })
 
 test("review snapshot converts enrichment failure and throw", async () => {
