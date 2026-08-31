@@ -9,10 +9,16 @@ export const sourceFiles = [
   "tests/auth-ui-e2e/mypage-reviews-fixtures.ts",
   "tests/auth-ui-e2e/mypage-reviews-assertions.ts",
   "tests/auth-ui-e2e/mypage-reviews-scenario.ts",
+  "tests/auth-ui-e2e/mypage-reviews-visual-scenario.ts",
+  "tests/auth-ui-e2e/mypage-reviews-visual-dom.ts",
+  "tests/auth-ui-e2e/mypage-reviews-visual-evidence.mjs",
+  "tests/auth-ui-e2e/mypage-reviews-png.mjs",
   "tests/auth-ui-e2e/mypage-reviews-evidence.mjs",
   "tests/auth-ui-e2e/run-mypage-reviews.mjs",
   "tests/auth-ui-e2e/mypage-reviews-runner.test.mjs",
   "tests/auth-ui-e2e/mypage-reviews-runner-contract-helpers.mjs",
+  "tests/auth-ui-e2e/mypage-reviews-runner-finalize.mjs",
+  "tests/auth-ui-e2e/mypage-reviews-visual-runner.test.mjs",
 ]
 
 export function sha256(value) {

@@ -1,6 +1,8 @@
 import { test } from "@playwright/test"
 import { createMypageReviewsScenario } from "./mypage-reviews-scenario"
 
+test.setTimeout(120_000)
+
 const reviewApiManifest = {
   create: "/api/reviews",
   hide: (reviewId: string) => `/api/admin/reviews/${reviewId}/hide`,

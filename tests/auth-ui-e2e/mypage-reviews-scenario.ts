@@ -19,10 +19,10 @@ import {
   fixtureManifest,
   type ReviewUserIds,
   restoreAuthenticatedReviewSelect,
-  revokeAuthenticatedReviewSelect,
   seedReviewPrerequisites,
   stabilizeAndInsertDeleted,
 } from "./mypage-reviews-fixtures"
+import { runMypageReviewsVisualScenario } from "./mypage-reviews-visual-scenario"
 
 type ReviewApiManifest = Readonly<{
   create: string
@@ -38,8 +38,10 @@ export function createMypageReviewsScenario(
   const userIds: string[] = []
   const reviewIds: string[] = []
   const scenarios: string[] = []
+  const visuals: object[] = []
   let grantRestored = false
   let injectedFailure = false
+  let lockRelease: "not_exercised" | "released" = "not_exercised"
   let cleanup = { cleanupCounters: rejectedCounters(), verdict: "REJECT" }
 
   async function run(): Promise<void> {
@@ -55,9 +57,11 @@ export function createMypageReviewsScenario(
     const ownerB = await createSession(page, testInfo, "owner-b", userIds)
     const coach = await createSession(page, testInfo, "coach", userIds)
     const admin = await createSession(page, testInfo, "admin", userIds)
+    const empty = await createSession(page, testInfo, "empty", userIds)
     const users: ReviewUserIds = {
       admin: admin.userId,
       coach: coach.userId,
+      empty: empty.userId,
       ownerA: ownerA.userId,
       ownerB: ownerB.userId,
       profileless: profileless.userId,
@@ -92,18 +96,23 @@ export function createMypageReviewsScenario(
     await assertOutOfRangeRecovery(page, ownerA)
     scenarios.push("out_of_range_recovery")
 
-    await revokeAuthenticatedReviewSelect()
-    try {
-      await activateReviewSession(page, ownerA)
-      await page.goto("/mypage/reviews")
-      await expect(
-        page.getByRole("heading", { name: "리뷰 내역을 불러오지 못했어요" }),
-      ).toBeVisible()
-      scenarios.push("controlled_read_failure")
-    } finally {
-      await restoreAuthenticatedReviewSelect()
-      grantRestored = true
-    }
+    await runMypageReviewsVisualScenario({
+      empty,
+      markGrantRestored: () => {
+        grantRestored = true
+      },
+      markInjectedFailure: () => {
+        injectedFailure = true
+      },
+      markLockReleased: () => {
+        lockRelease = "released"
+      },
+      onCapture: (observation) => visuals.push(observation),
+      ownerA,
+      page,
+      testInfo,
+    })
+    scenarios.push("controlled_read_failure")
 
     if (
       process.env["SPOLINK_MYPAGE_REVIEWS_INJECT_CHILD_FAILURE"] === "1" &&
@@ -123,7 +132,14 @@ export function createMypageReviewsScenario(
     try {
       cleanup = { ...(await cleanupExactFixtures(userIds, reviewIds)), verdict: "APPROVE" }
     } finally {
-      await writeReceipt(testInfo, { cleanup, grantRestored, injectedFailure, scenarios })
+      await writeReceipt(testInfo, {
+        cleanup,
+        grantRestored,
+        injectedFailure,
+        lockRelease,
+        scenarios,
+        visuals,
+      })
     }
   }
 

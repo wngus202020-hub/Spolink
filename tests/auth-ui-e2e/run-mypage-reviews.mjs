@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 
 import { constants } from "node:fs"
-import { access, readFile } from "node:fs/promises"
+import { access, rm } from "node:fs/promises"
 import path from "node:path"
 import { resolveEvidenceChildPath } from "./evidence-paths.mjs"
 import { withConfiguredAuthMode } from "./lifecycle.mjs"
 import {
-  allCountersAreZero,
   assertNoSensitiveEvidence,
-  projects,
   readProjectReceipts,
   redactDiagnostic,
   sha256,
   sourceManifest,
-  writeMode600Json,
 } from "./mypage-reviews-evidence.mjs"
+import { finalizeMypageReviewsRun } from "./mypage-reviews-runner-finalize.mjs"
+import { expectedVisualImages, removePublishedVisuals } from "./mypage-reviews-visual-evidence.mjs"
 import { buildChildEnv, runBuffered } from "./process.mjs"
 import { prepareRawPlaywrightOutputDir } from "./raw-output.mjs"
 
+const exactVisualImageCount = 9
 const expectedScenarios = [
   "anonymous_redirect",
   "profile_required_redirect",
@@ -33,29 +33,23 @@ const spec = "tests/auth-ui-e2e/mypage-reviews.spec.ts"
 async function main() {
   const requestedOutputPath =
     process.argv[2] ??
-    path.join(".omo/evidence", "mypage-reviews-management/task-6/focused-summary.json")
+    path.join(".omo/evidence", "mypage-reviews-management/task-7/focused-summary.json")
   const outputPath = await resolveEvidenceChildPath(requestedOutputPath, {
     kind: "file",
     suffix: ".json",
   })
-  const evidenceDir = path.dirname(outputPath)
-  const cleanupReceiptPath = await resolveEvidenceChildPath(
-    path.join(evidenceDir, "cleanup.json"),
-    {
-      kind: "file",
-      suffix: ".json",
-    },
-  )
-  const sourceManifestPath = await resolveEvidenceChildPath(
-    path.join(evidenceDir, "source-manifest.json"),
-    { kind: "file", suffix: ".json" },
-  )
-  if (new Set([outputPath, cleanupReceiptPath, sourceManifestPath]).size !== 3) {
+  const paths = await resolveOutputPaths(outputPath)
+  const allPaths = [outputPath, paths.cleanup, paths.lifecycleCleanup, paths.manifest, paths.visual]
+  if (new Set(allPaths).size !== allPaths.length)
     throw new Error("Review evidence paths must be distinct.")
+  await Promise.all(allPaths.map(assertWritableEvidenceTarget))
+  await removePublishedVisuals(paths.screenshots)
+  await Promise.all(allPaths.map((file) => rm(file, { force: true })))
+
+  const [initialSources, parentSha] = await Promise.all([sourceManifest(), readParentSha()])
+  if (expectedVisualImages.length !== exactVisualImageCount) {
+    throw new Error("Review visual image contract must contain exactly nine entries.")
   }
-  await Promise.all(
-    [outputPath, cleanupReceiptPath, sourceManifestPath].map(assertWritableEvidenceTarget),
-  )
   const rawOutput = await prepareRawPlaywrightOutputDir({ retain: false, suppliedDir: null })
   let run = null
   let receipts = []
@@ -63,7 +57,7 @@ async function main() {
   try {
     try {
       run = await withConfiguredAuthMode(
-        { cleanupReceiptPath, enableConfirmations: false },
+        { cleanupReceiptPath: paths.lifecycleCleanup, enableConfirmations: false },
         async ({ baseUrl, status }) => {
           const child = await runBuffered(
             "corepack",
@@ -88,13 +82,15 @@ async function main() {
                 SPOLINK_AUTH_E2E_PLAYWRIGHT_OUTPUT_DIR: rawOutput.dir,
                 SPOLINK_MYPAGE_REVIEWS_INJECT_CHILD_FAILURE:
                   process.env["SPOLINK_MYPAGE_REVIEWS_INJECT_CHILD_FAILURE"] ?? "0",
+                SPOLINK_MYPAGE_REVIEWS_INJECT_VISUAL_FAILURE:
+                  process.env["SPOLINK_MYPAGE_REVIEWS_INJECT_VISUAL_FAILURE"] ?? "0",
+                SPOLINK_MYPAGE_REVIEWS_VISUAL_STAGING_DIR: path.join(rawOutput.dir, "visuals"),
               }),
-              timeoutMs: 180_000,
+              timeoutMs: 360_000,
             },
           )
-          if (child.exitCode !== 0) {
+          if (child.exitCode !== 0)
             console.error(redactDiagnostic(`${child.stdout}\n${child.stderr}`))
-          }
           receipts = await readProjectReceipts(rawOutput.dir)
           return {
             exitCode: child.exitCode,
@@ -107,67 +103,52 @@ async function main() {
       lifecycleErrorHash = sha256(error instanceof Error ? error.message : String(error))
     }
 
-    const cleanup = await readJsonOrReject(cleanupReceiptPath)
-    const currentSources = await sourceManifest()
-    await writeMode600Json(sourceManifestPath, {
-      files: currentSources,
-      generatedAt: new Date().toISOString(),
-      schemaVersion: 1,
-    })
-    const injectionRequested = process.env["SPOLINK_MYPAGE_REVIEWS_INJECT_CHILD_FAILURE"] === "1"
-    const scenariosApprove = receipts.every(
-      (receipt) =>
-        expectedScenarios.every((scenario) => receipt.scenarios.includes(scenario)) &&
-        receipt.grantRestored === true,
-    )
-    const cleanupApprove = allCountersAreZero(receipts)
-    const lifecycleApprove =
-      cleanup.verdict === "APPROVE" &&
-      cleanup.stoppedAsserted === true &&
-      cleanup.cleanup?.config === "external-removed"
-    const injectionObserved = receipts.some((receipt) => receipt.injectedFailure === true)
-    const functionalApprove =
-      !injectionRequested &&
-      run?.exitCode === 0 &&
-      receipts.length === projects.length &&
-      scenariosApprove &&
-      cleanupApprove &&
-      lifecycleApprove &&
-      lifecycleErrorHash === null
-    const verdict = functionalApprove ? "APPROVE" : "REJECT"
-    const summary = {
-      cleanup: { exactCountersAllZero: cleanupApprove, lifecycle: cleanup },
-      exitCode: run?.exitCode ?? null,
-      failureInjection: {
-        observed: injectionObserved,
-        requested: injectionRequested,
-        restorationProved: injectionObserved && cleanupApprove && lifecycleApprove,
-      },
-      generatedAt: new Date().toISOString(),
-      fixtureCleanup: receipts.map((receipt) => ({
-        cleanupCounters: receipt.cleanup.cleanupCounters,
-        project: receipt.project,
-        verdict: receipt.cleanup.verdict,
-      })),
+    const injectionRequested =
+      process.env["SPOLINK_MYPAGE_REVIEWS_INJECT_CHILD_FAILURE"] === "1" ||
+      process.env["SPOLINK_MYPAGE_REVIEWS_INJECT_VISUAL_FAILURE"] === "1"
+    const finalized = await finalizeMypageReviewsRun({
+      exactVisualImageCount,
+      expectedScenarios,
+      initialSources,
+      injectionRequested,
       lifecycleErrorHash,
-      projects,
-      resultHash: run?.resultHash ?? null,
-      scenarioResults: receipts.map((receipt) => ({
-        project: receipt.project,
-        scenarios: receipt.scenarios.map((scenario) => ({ scenario, verdict: "APPROVE" })),
-      })),
-      schemaVersion: 2,
-      signal: run?.signal ?? null,
-      sourceManifest: currentSources,
-      specs: [spec],
-      verdict,
-    }
-    assertNoSensitiveEvidence(summary)
-    await writeMode600Json(outputPath, summary)
-    if (verdict !== "APPROVE") process.exitCode = 1
+      outputPath,
+      parentSha,
+      paths,
+      rawOutputDir: rawOutput.dir,
+      receipts,
+      run,
+      spec,
+    })
+    assertNoSensitiveEvidence(finalized)
+    if (finalized.verdict !== "APPROVE") process.exitCode = 1
   } finally {
     await rawOutput.cleanup()
   }
+}
+
+async function resolveOutputPaths(outputPath) {
+  const evidenceDir = path.dirname(outputPath)
+  const resolveJson = (name) =>
+    resolveEvidenceChildPath(path.join(evidenceDir, name), {
+      kind: "file",
+      suffix: ".json",
+    })
+  return {
+    cleanup: await resolveJson("cleanup.json"),
+    lifecycleCleanup: await resolveJson("lifecycle-cleanup.json"),
+    manifest: await resolveJson("source-manifest.json"),
+    screenshots: path.join(evidenceDir, "screenshots"),
+    visual: await resolveJson("visual-summary.json"),
+  }
+}
+
+async function readParentSha() {
+  const result = await runBuffered("git", ["rev-parse", "HEAD"], { timeoutMs: 10_000 })
+  const value = result.stdout.trim()
+  if (result.exitCode !== 0 || !/^[0-9a-f]{40}$/u.test(value))
+    throw new Error("Unable to bind parent SHA.")
+  return value
 }
 
 async function assertWritableEvidenceTarget(filePath) {
@@ -176,17 +157,6 @@ async function assertWritableEvidenceTarget(filePath) {
   } catch (error) {
     if (!(error instanceof Error) || !error.message.includes("ENOENT")) throw error
     await access(path.dirname(filePath), constants.W_OK)
-  }
-}
-
-async function readJsonOrReject(filePath) {
-  try {
-    return JSON.parse(await readFile(filePath, "utf8"))
-  } catch (error) {
-    return {
-      errorHash: sha256(error instanceof Error ? error.message : String(error)),
-      verdict: "REJECT",
-    }
   }
 }
 

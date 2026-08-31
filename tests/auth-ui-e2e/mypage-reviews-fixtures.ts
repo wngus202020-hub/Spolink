@@ -18,11 +18,13 @@ export const fixtureManifest = {
 
 export const activeLessonTitle = "리뷰 내역 활성 레슨"
 export const inactiveLessonTitle = "리뷰 내역 종료 레슨"
-export const hiddenReason = "운영 정책 확인"
+export const hiddenReason =
+  "운영 정책에 따라 개인정보와 외부 연락처가 포함된 표현을 확인하고 있어 리뷰를 임시로 숨겼습니다. 검토 결과는 안전한 서비스 이용을 위해 작성자에게만 안내합니다."
 
 export type ReviewUserIds = Readonly<{
   admin: string
   coach: string
+  empty: string
   ownerA: string
   ownerB: string
   profileless: string
@@ -38,6 +40,7 @@ export async function seedReviewPrerequisites(users: ReviewUserIds): Promise<voi
       await tx`insert into public.profiles (id, display_name, role, status) values
         (${users.ownerA}, '리뷰 소유자 A', 'learner', 'active'),
         (${users.ownerB}, '리뷰 소유자 B', 'learner', 'active'),
+        (${users.empty}, '리뷰 빈 상태', 'learner', 'active'),
         (${users.coach}, '리뷰 지도자', 'coach', 'coach_approved'),
         (${users.admin}, '리뷰 관리자', 'admin', 'active')`
       await tx`insert into public.coach_profiles
@@ -95,6 +98,9 @@ export async function stabilizeAndInsertDeleted(
           timestamptz '2026-08-01 00:00:00+00' + (${index} * interval '1 minute')
           where id = ${reviewId}`
       }
+      const nullableReviewId = reviewIds[18]
+      if (!nullableReviewId) throw new Error("Missing nullable review fixture.")
+      await tx`update public.reviews set content = null where id = ${nullableReviewId}`
       await tx`insert into public.reviews
         (id, reservation_id, lesson_id, coach_profile_id, reviewer_id, status, rating,
          content, created_at)
@@ -113,6 +119,37 @@ export async function revokeAuthenticatedReviewSelect(): Promise<void> {
 
 export async function restoreAuthenticatedReviewSelect(): Promise<void> {
   await withDb((sql) => sql`grant select on table public.reviews to authenticated`.then(() => {}))
+}
+
+export async function acquireReviewSelectLock(): Promise<() => Promise<void>> {
+  const dbUrl = process.env["SPOLINK_AUTH_E2E_DB_URL"]
+  if (!dbUrl) throw new Error("SPOLINK_AUTH_E2E_DB_URL is required.")
+  const sql = postgres(dbUrl, { idle_timeout: 1, max: 1 })
+  let releaseTransaction = () => {}
+  let markAcquired = () => {}
+  const acquired = new Promise<void>((resolve) => {
+    markAcquired = resolve
+  })
+  const releaseSignal = new Promise<void>((resolve) => {
+    releaseTransaction = resolve
+  })
+  const transaction = sql.begin(async (tx) => {
+    await tx`lock table public.reviews in access exclusive mode`
+    markAcquired()
+    await releaseSignal
+  })
+  await acquired
+  let released = false
+  return async () => {
+    if (released) return
+    released = true
+    releaseTransaction()
+    try {
+      await transaction
+    } finally {
+      await sql.end({ timeout: 1 })
+    }
+  }
 }
 
 export async function cleanupReviewFixtures(

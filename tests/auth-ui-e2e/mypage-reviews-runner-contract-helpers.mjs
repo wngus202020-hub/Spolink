@@ -9,6 +9,11 @@ const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)))
 const specPath = path.join(repoRoot, "tests/auth-ui-e2e/mypage-reviews.spec.ts")
 const scenarioPath = path.join(repoRoot, "tests/auth-ui-e2e/mypage-reviews-scenario.ts")
 const assertionsPath = path.join(repoRoot, "tests/auth-ui-e2e/mypage-reviews-assertions.ts")
+const runnerPath = path.join(repoRoot, "tests/auth-ui-e2e/run-mypage-reviews.mjs")
+const runnerFinalizePath = path.join(
+  repoRoot,
+  "tests/auth-ui-e2e/mypage-reviews-runner-finalize.mjs",
+)
 
 export function semanticObligationDiagnostics(mutationTarget = null) {
   const configPath = path.join(repoRoot, "tsconfig.json")
@@ -94,6 +99,45 @@ export async function inspectOutOfRangeRecovery() {
     }
   })
   return observation
+}
+
+export async function inspectRunnerVisualObligations() {
+  const source = `${await readFile(runnerPath, "utf8")}\n${await readFile(runnerFinalizePath, "utf8")}`
+  const file = typescript.createSourceFile(
+    runnerPath,
+    source,
+    typescript.ScriptTarget.Latest,
+    true,
+    typescript.ScriptKind.JS,
+  )
+  const calls = new Set()
+  const stringValues = []
+  let exactImageCount = null
+  visit(file, (node) => {
+    if (typescript.isCallExpression(node)) {
+      const name =
+        propertyName(node.expression) ??
+        (typescript.isIdentifier(node.expression) ? node.expression.text : null)
+      if (name) calls.add(name)
+    }
+    if (typescript.isStringLiteral(node)) stringValues.push(node.text)
+    if (
+      typescript.isVariableDeclaration(node) &&
+      typescript.isIdentifier(node.name) &&
+      node.name.text === "exactVisualImageCount" &&
+      node.initializer &&
+      typescript.isNumericLiteral(node.initializer)
+    ) {
+      exactImageCount = Number(node.initializer.text)
+    }
+  })
+  return {
+    exactImageCount,
+    publishesVisualBundle: calls.has("validateAndPublishVisualBundle"),
+    removesFailedPublication: calls.has("removePublishedVisuals"),
+    writesCanonicalManifest: stringValues.includes("source-manifest.json"),
+    writesVisualSummary: stringValues.includes("visual-summary.json"),
+  }
 }
 
 export async function runMalformedRunner(runnerPath, timeoutMs = 4_000) {
