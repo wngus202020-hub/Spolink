@@ -1,14 +1,16 @@
 import assert from "node:assert/strict"
 import { existsSync, readFileSync } from "node:fs"
-import { registerHooks } from "node:module"
+import { createRequire, registerHooks } from "node:module"
 import test from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { createElement } from "react"
+import { compile } from "tailwindcss"
 import typescript from "typescript"
 
 import { inspectRenderedHtml } from "./react-html-runtime.mjs"
 
 const workspaceUrl = pathToFileURL(`${process.cwd()}/`).href
+const require = createRequire(import.meta.url)
 const runtimeKey = Symbol.for("spolink.mypage-reviews-ui-runtime")
 const readyAuth = { kind: "ready", profile: { id: "learner-ui-contract" } }
 
@@ -252,6 +254,76 @@ test("Given ready review data, when the reusable list renders at 390px, then row
   )
 })
 
+test("Given review history targets, when production utilities render each pagination state, then every required target is at least 44px", async () => {
+  // Given: an active lesson, an inactive lesson, and both previous/next pagination states.
+  const { ReviewHistoryList } = await loadReviewComponents()
+  const targetViewModel = {
+    ...readyViewModel,
+    items: [{ ...readyViewModel.items[0], lessonTitle: "활성 레슨" }, readyViewModel.items[1]],
+  }
+  const paginationStates = [
+    { expectedLink: "다음", page: 1 },
+    { expectedLink: "이전", page: 2 },
+  ]
+  const geometryFailures = []
+
+  // When: the component's own utility candidates are compiled and rendered in Chromium.
+  for (const state of paginationStates) {
+    await inspectRenderedHtml(
+      createElement(ReviewHistoryList, {
+        viewModel: { ...targetViewModel, page: state.page },
+      }),
+      async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 })
+        await page.addStyleTag({ content: await compileReviewUtilityCss(page) })
+
+        // Then: touch-target geometry follows rendered roles, not a pinned class-name string.
+        const activeLesson = page.getByRole("link", {
+          name: targetViewModel.items[0].lessonTitle,
+        })
+        const activeLessonRect = await readElementRect(activeLesson)
+        if (activeLessonRect.height < 44 || activeLessonRect.width < 44) {
+          geometryFailures.push({ label: "활성 레슨", ...activeLessonRect })
+        }
+        assert.equal(
+          await page.getByRole("link", { name: targetViewModel.items[1].lessonTitle }).count(),
+          0,
+        )
+        assert.equal(
+          await page
+            .getByRole("heading", { level: 3, name: targetViewModel.items[1].lessonTitle })
+            .count(),
+          1,
+        )
+
+        const pagination = await page
+          .locator("nav[aria-label='리뷰 목록 페이지'] > *")
+          .evaluateAll((nodes) =>
+            nodes.map((node) => {
+              const rect = node.getBoundingClientRect()
+              return {
+                height: rect.height,
+                label: node.textContent?.trim() ?? "",
+                tag: node.tagName.toLowerCase(),
+                width: rect.width,
+              }
+            }),
+          )
+        assert.deepEqual(
+          pagination.map((target) => target.label),
+          ["이전", "다음"],
+        )
+        for (const target of pagination) {
+          if (target.height < 44 || target.width < 44) geometryFailures.push(target)
+        }
+        assert.equal(await page.getByRole("link", { name: state.expectedLink }).count(), 1)
+        await assertNoHorizontalOverflow(page)
+      },
+    )
+  }
+  assert.deepEqual(geometryFailures, [])
+})
+
 test("Given out-of-range and read failures, when the page renders, then recovery states remain distinct and private", async () => {
   // Given: separate expected owner-read outcomes.
   const Page = (await loadReviewsPage()).default
@@ -348,4 +420,37 @@ async function assertNoHorizontalOverflow(page) {
     ),
     true,
   )
+}
+
+async function compileReviewUtilityCss(page) {
+  const candidates = await page
+    .locator("[class]")
+    .evaluateAll((nodes) => [...new Set(nodes.flatMap((node) => [...node.classList]))])
+  const compiler = await compile(
+    `@import "tailwindcss";
+@theme { --spacing: 0.25rem; }
+:root { --type-body-lg-size: 18px; }
+body { margin: 0; font-size: 16px; line-height: 1.55; word-break: keep-all; }`,
+    {
+      base: process.cwd(),
+      async loadStylesheet(specifier, from) {
+        const resolved =
+          specifier === "tailwindcss"
+            ? require.resolve("tailwindcss/index.css")
+            : require.resolve(specifier, { paths: [from ?? process.cwd()] })
+        return {
+          base: fileURLToPath(pathToFileURL(resolved)),
+          content: readFileSync(resolved, "utf8"),
+        }
+      },
+    },
+  )
+  return compiler.build(candidates)
+}
+
+async function readElementRect(locator) {
+  return await locator.evaluate((node) => {
+    const rect = node.getBoundingClientRect()
+    return { height: rect.height, width: rect.width }
+  })
 }

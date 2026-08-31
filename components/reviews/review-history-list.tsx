@@ -50,25 +50,25 @@ function ReviewHistoryPagination({
     >
       {page > 1 ? (
         <Link
-          className="inline-flex min-h-10 items-center rounded-[var(--radius-md)] border border-line bg-canvas px-4 text-sm font-bold text-primary hover:bg-inset"
+          className="inline-flex min-h-11 items-center rounded-[var(--radius-md)] border border-line bg-canvas px-4 text-sm font-bold text-primary hover:bg-inset"
           href={reviewPageHref(page - 1)}
         >
           이전
         </Link>
       ) : (
-        <span className="inline-flex min-h-10 items-center rounded-[var(--radius-md)] bg-inset px-4 text-sm font-bold text-tertiary">
+        <span className="inline-flex min-h-11 items-center rounded-[var(--radius-md)] bg-inset px-4 text-sm font-bold text-tertiary">
           이전
         </span>
       )}
       {page < totalPages ? (
         <Link
-          className="inline-flex min-h-10 items-center rounded-[var(--radius-md)] border border-line bg-canvas px-4 text-sm font-bold text-primary hover:bg-inset"
+          className="inline-flex min-h-11 items-center rounded-[var(--radius-md)] border border-line bg-canvas px-4 text-sm font-bold text-primary hover:bg-inset"
           href={reviewPageHref(page + 1)}
         >
           다음
         </Link>
       ) : (
-        <span className="inline-flex min-h-10 items-center rounded-[var(--radius-md)] bg-inset px-4 text-sm font-bold text-tertiary">
+        <span className="inline-flex min-h-11 items-center rounded-[var(--radius-md)] bg-inset px-4 text-sm font-bold text-tertiary">
           다음
         </span>
       )}

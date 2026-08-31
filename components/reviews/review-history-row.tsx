@@ -37,7 +37,7 @@ export function ReviewHistoryRow({ review }: ReviewHistoryRowProps) {
 
         {review.lessonHref ? (
           <Link
-            className="w-fit max-w-full break-words text-[length:var(--type-body-lg-size)] font-bold leading-snug text-primary underline-offset-4 hover:underline"
+            className="inline-flex min-h-11 w-fit max-w-full items-center break-words text-[length:var(--type-body-lg-size)] font-bold leading-snug text-primary underline-offset-4 hover:underline"
             href={review.lessonHref}
           >
             {review.lessonTitle}
