@@ -1319,6 +1319,19 @@ GET /api/lessons/{lessonId}/reviews
 
 - `reviews.status = visible`만 공개 노출한다.
 
+### 내 리뷰 관리 읽기
+
+내 리뷰 관리를 위한 HTTP `GET`을 추가하지 않는다. `/mypage/reviews` Server Component가
+쿠키 인식 Supabase 클라이언트로 읽고, 세션의 `auth.profile.id`를 소유자 값으로 전달한다.
+
+읽기 계약:
+
+- `reviewer_id`가 일치하는 `visible`과 `hidden`만 최신순으로 조회한다.
+- `hidden`의 숨김 사유는 작성자 전용 응답 모델에만 포함하고 `deleted`는 제외한다.
+- 일반 공개 `GET /api/lessons/{lessonId}/reviews`는 계속 `visible`만 반환한다.
+- 이 계약과 브라우저 증거는 로컬 Supabase/Next 검증 범위이며 hosted, production, provider
+  동작을 주장하지 않는다.
+
 ### 리뷰 숨김
 
 ```http

@@ -8,6 +8,7 @@
 - `profile/page.tsx`: server-loaded profile edit shell; `profile/loading.tsx` and `profile/error.tsx` are its local boundaries.
 - `reservations/page.tsx`: `status`/`page` query normalization, paginated read model, and filter links.
 - `reservations/[reservationId]/page.tsx`: detail read with owner ID, current payment/refund state, and safe `next` path.
+- `reviews/page.tsx`: owner-only visible/hidden history, deterministic pagination, and local list states.
 - `reviews/new/page.tsx`: `reservationId` query read and completed-owner eligibility before rendering `ReviewForm`.
 - `trust-safety/page.tsx`: authenticated report/block reads composed into `TrustSafetyPanel`.
 - `lib/auth/page-auth.ts`: shared suspended/deleted account boundary used by every protected member page.
@@ -24,6 +25,8 @@
 - Pass `auth.profile.id` into reservation/favorite/read-model calls; a route guard or visible client state is not authorization.
 - Reservation detail reads must recheck both reservation ownership and current status before exposing payment, completion, review, or refund information.
 - The review page must recheck the supplied reservation ID for the signed-in member and require the completed state before showing `ReviewForm`.
+- `/mypage/reviews` passes only `auth.profile.id` to the Server Component read model; it exposes owner
+  visible/hidden rows and hidden reasons, never deleted rows or a client-supplied owner ID.
 - Keep state transitions and policy calculations in `lib/` workflows/read models; pages only classify and compose the result.
 
 ## QUERY AND CONTEXT
@@ -38,6 +41,8 @@
 - Keep profile loading/error behavior beside `/mypage/profile`: loading exposes `aria-busy`, and the client error boundary calls its supplied `reset`.
 - Profile read failure copy must stay Korean, actionable, and local to the profile segment; do not replace the boundary with a blank or cached shell.
 - For list reads, render the established `read_failure`, `empty`, and `ready` states without leaking private records or treating failure as empty data.
+- Review history owns `ready`, `empty`, `out_of_range`, `read_failure`, `loading`, `error`; keep
+  expected read failure inline and reserve the segment error boundary for unexpected throws.
 
 ## RESPONSIVE CHECK
 
@@ -58,5 +63,7 @@
 - `corepack pnpm lint`
 - `corepack pnpm test:api`
 - `corepack pnpm test:e2e:profile-edit` for profile redirects, local states, and desktop/tablet/mobile evidence.
+- `node --test tests/mypage-reviews-ui.test.mjs tests/mypage-reviews-documentation.test.mjs`
+- `node tests/auth-ui-e2e/run-mypage-reviews.mjs .omo/evidence/mypage-reviews-management/task-8/focused-summary.json`
 - `SPOLINK_VISUAL_QA_DIR=.omo/evidence/mypage-reservations-20260827/screenshots corepack pnpm test:e2e:reservations .omo/evidence/mypage-reservations-20260827/focused-summary.json` for member ownership, reservation state, filters, detail navigation, and 390/768/1280px evidence.
-- `corepack pnpm dev`, then inspect `/mypage`, `/mypage/profile`, `/mypage/reservations`, and `/mypage/trust-safety` at 390/768/1280px.
+- `corepack pnpm dev`, then inspect `/mypage`, `/mypage/profile`, `/mypage/reservations`, `/mypage/reviews`, and `/mypage/trust-safety` at 390/768/1280px.

@@ -12,6 +12,8 @@ direction checks.
 - `run.mjs` runs its confirmation modes sequentially; package composition invokes focused runners separately.
 - `run-mypage-profile-edit.mjs` is the focused `/mypage/profile` runner; keep it outside the Auth
   aggregate and run it through `corepack pnpm test:e2e:profile-edit`.
+- `run-mypage-reviews.mjs` is the focused `/mypage/reviews` managed runner; keep it outside the Auth
+  aggregate and pass an explicit mode-restricted summary path.
 - New browser runners reuse `withConfiguredAuthMode`; do not duplicate server/Supabase startup.
 - `lifecycle.mjs` owns loopback ports, Auth config snapshot/restore, Supabase reset, Next child,
   readiness, signals, and final stopped-state checks.
@@ -33,7 +35,8 @@ direction checks.
 - `test:e2e:payment`: payment preparation only.
 - `test:e2e:profile-edit`: the focused `/mypage/profile` desktop/tablet/mobile runner.
 - `test:e2e:reservations`: learner list/detail/completion/calendar only.
-- Do not register focused payment, profile, or reservation runners inside `run.mjs`.
+- My Page review management remains a direct focused runner with no package aggregate registration.
+- Do not register focused payment, profile, review-management, or reservation runners inside `run.mjs`.
 
 ## EVIDENCE AND SECURITY
 
@@ -53,6 +56,8 @@ direction checks.
   publish exactly six PNGs, validate nonempty ICS download, and assert completion persistence.
 - Publish reservation evidence as a mode-restricted versioned bundle, atomically update `current`, and
   bind `focused-summary.json` to the six image hashes through `source-run-manifest.json`.
+- Review management must prove owner visible/hidden, deleted exclusion, public visible-only, owner
+  isolation, redirects, read failure, pagination, and exactly nine hash-bound responsive/dark PNGs.
 
 ## RUN
 
@@ -62,4 +67,5 @@ corepack pnpm test:e2e:payment
 corepack pnpm test:e2e:profile-edit
 corepack pnpm test:e2e:reservations
 corepack pnpm test:e2e:direction-alignment
+node tests/auth-ui-e2e/run-mypage-reviews.mjs .omo/evidence/mypage-reviews-management/task-8/focused-summary.json
 ```

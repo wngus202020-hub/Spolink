@@ -907,6 +907,45 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - `completed` 예약만 작성 가능
 - 예약당 1개만 작성 가능
 
+## 16-1. 내 리뷰 관리
+
+경로:
+
+```text
+/mypage/reviews
+```
+
+목적과 읽기 경계:
+
+- Server Component가 인증 프로필 ID로 작성자 소유 리뷰를 읽는다. 새 공개 API는 추가하지 않는다.
+- 작성자 본인의 `visible`/`hidden`과 숨김 사유를 표시하고 `deleted`는 표시하지 않는다.
+- 공개 레슨 리뷰 API는 계속 `visible`만 제공한다.
+
+상태:
+
+| 상태 | 화면 동작 |
+|------|-----------|
+| ready | 최신순 리뷰, 공개 상태, 별점, 작성일, 조건부 레슨 링크와 페이지 이동 표시 |
+| empty | 완료한 예약을 확인하는 CTA 표시 |
+| out_of_range | 첫 페이지 복구 CTA 표시 |
+| read_failure | 기대된 읽기 실패를 inline alert로 표시 |
+| loading | `aria-busy` skeleton 표시 |
+| error | 예기치 않은 오류와 `reset()` 재시도 표시 |
+
+내비게이션:
+
+- 마이페이지의 `리뷰 내역 보기`에서 진입한다.
+- 리뷰 등록 성공 상태의 `내 리뷰 보기`에서 진입하며 자동 이동하지 않는다.
+
+검증된 화면:
+
+- 로컬 managed Supabase/Next/Chromium에서 공개·숨김/숨김 사유, 삭제 제외, 소유자 격리,
+  공개 API visible-only와 복구 상태를 확인했다.
+- 390×844, 768×1024, 1280×800에서 44px 이상 컨트롤, 줄바꿈, 페이지 왕복,
+  가로 overflow 없음이 확인됐다.
+- 검증 근거는 로컬 managed Supabase/Next/Chromium 실행이며 hosted, production, provider
+  동작을 주장하지 않는다.
+
 ## 17. 지도자 대시보드
 
 후보 경로:

@@ -777,6 +777,15 @@ erDiagram
 - 승인된 `coach_profiles`의 공개 필드
 - `reviews` 중 `status = visible`
 
+### 리뷰 SELECT 정책
+
+| 정책 | role | 조건 | 허용 범위 |
+|------|------|------|-----------|
+| `reviews_public_visible_only` | `anon`, `authenticated` | `status = 'visible'` | 공개 목록은 공개 리뷰만 조회 |
+| `reviews_owner_visible_hidden_select` | `authenticated` | `reviewer_id = auth.uid()` AND `status IN ('visible', 'hidden')` | 작성자 본인의 공개/숨김 리뷰와 숨김 사유 조회 |
+
+두 permissive 정책은 OR로 평가된다. `deleted`는 두 SELECT 정책 모두 허용하지 않는다.
+
 ### 제한 조회
 
 제한 조회 필요:
