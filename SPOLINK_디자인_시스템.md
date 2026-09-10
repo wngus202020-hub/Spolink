@@ -338,11 +338,21 @@ Rules:
 
 Tokens:
 
-- Height: 44px 이상
+- 단일 행 입력·검색·선택 컨트롤 Height: 48px
+- 여러 줄 입력은 문맥에 맞는 높이를 사용하되 기본 최소 높이는 128px
 - Radius: 8px
+- Font: 16px, line-height 1.5
+- Padding-inline: 16px. 아이콘형 검색 입력은 아이콘 공간만 별도 확보
+- Background: `--surface-inset`
 - Border: `--border-default`
 - Focus: `--text-primary` ring
 - Error: `--status-error`
+
+구현 규칙:
+
+- `TextInput`, `SelectInput`, `TextareaInput` 공통 프리미티브를 사용한다.
+- 입력 종류가 달라도 같은 화면의 단일 행 컨트롤 높이·글자·모서리·배경을 바꾸지 않는다.
+- 긴 지역 선택지는 모바일 48px, 2열 이상에서는 64px 최소 높이로 맞춰 한국어 줄바꿈에도 행 높이가 흔들리지 않게 한다.
 
 현재 구현:
 
@@ -363,6 +373,7 @@ Rules:
 - 선택값이 예약/결제 금액을 바꾸면 즉시 요약 패널에 반영한다.
 - 날짜 선택은 이미 마감된 일정과 정원 초과 일정을 disabled로 표시한다.
 - 키보드 탐색과 화면 리더 라벨을 보장한다.
+- 회원가입 기본 지역은 입력 전 선택지를 숨기고, 검색어 입력 후 후보를 최대 2개 표시한다.
 
 ### 5.7 Tabs
 
@@ -804,6 +815,28 @@ Rules:
 - public bucket의 알려진 URL 회수 여부를 UI 성공 상태로 추정하지 않는다. 화면 성공은 ready
   DB/API 제외와 멱등 삭제 영수증을 기준으로 한다.
 
+### 5.23 Profile Avatar Manager
+
+Usage:
+
+- `/mypage/profile`의 기본 프로필 정보 앞
+- `/mypage`의 현재 사용자 요약
+
+Structure:
+
+- 112px 원형 사진 미리보기와 활동 이름 기반 문자 fallback
+- `사진 선택` 파일 입력, 사진이 있을 때만 노출하는 `사진 삭제` 명령
+- 업로드/삭제 진행 상태, 성공 메시지, 입력 가까이의 오류 alert
+- 삭제 전 native dialog와 취소/확정 동작
+
+Rules:
+
+- JPEG/PNG/WebP, 파일당 5 MiB 이하만 허용하며 파일 선택 즉시 형식과 크기를 검증한다.
+- 조작 영역은 44px 이상이며 키보드로 파일 선택과 삭제 dialog를 완료할 수 있어야 한다.
+- 사진은 `profile-avatars/profiles/{auth.uid}/avatar` 한 경로만 사용해 교체 파일이 누적되지 않게 한다.
+- 사진 경로가 프로필에 반영된 뒤 성공 상태를 표시하고 `router.refresh()`로 서버 화면을 동기화한다.
+- 미리보기 실패 시 레이아웃을 유지한 채 활동 이름 첫 글자로 대체하며, 원형 비율과 대체 텍스트를 유지한다.
+
 ## 6. Motion & Interaction
 
 ### Timing
@@ -944,7 +977,9 @@ Rules:
 
 로컬 Supabase/Auth/RLS와 lesson/reservation/review/trust-safety/notification 및 내부
 refund/settlement 상태 경계가 구현되어 있다. 지도자 인증 신청·private certificate
-upload/submission/review도 구현되어 있다. hosted Supabase, actual Toss refund execution,
+upload/submission/review도 구현되어 있다. 별도 Hosted Supabase/Vercel staging에는 같은 migration
+set과 앱 runtime 설정이 배포되어 guest/readiness, Auth/RLS smoke, custom SMTP 기반 이메일
+확인·복구 E2E까지 확인했다. CI/CD, production deployment, actual Toss refund execution,
 payout network, maps, chat, push는 deferred이며 완료된 UI나 provider 연동으로 표기하지 않는다.
 
 ### Tailwind Mapping

@@ -1,11 +1,13 @@
 # AUTHENTICATED MEMBER ROUTE GUIDE
 
-`app/mypage/` owns authenticated member pages: account entry, profile, reservations, favorites, notifications, reviews, and trust-safety.
+`app/mypage/` owns authenticated member pages: account entry/settings, profile, reservations, favorites, notifications, reviews, and trust-safety.
 
 ## WHERE TO LOOK
 
-- `page.tsx`: authenticated member hub and navigation targets.
-- `profile/page.tsx`: server-loaded profile edit shell; `profile/loading.tsx` and `profile/error.tsx` are its local boundaries.
+- `page.tsx`: authenticated member hub/navigation targets and its cache-busted avatar summary URL.
+- `profile/page.tsx`: server-loaded profile and avatar edit shell; `profile/loading.tsx` and `profile/error.tsx` are its local boundaries.
+- `settings/page.tsx`: authenticated email/status summary, password recovery, logout, and soft withdrawal.
+- `notifications/page.tsx`: server initial list plus the optional browser push toggle.
 - `reservations/page.tsx`: `status`/`page` query normalization, paginated read model, and filter links.
 - `reservations/[reservationId]/page.tsx`: detail read with owner ID, current payment/refund state, and safe `next` path.
 - `reviews/page.tsx`: owner-only visible/hidden history, deterministic pagination, and local list states.
@@ -19,6 +21,12 @@
 - Send `profile_required` to `/onboarding/profile`; suspended/deleted states remain owned by `readPageAuthProfile()`.
 - Keep `dynamic = "force-dynamic"` and `revalidate = 0` on cookie- and account-dependent pages. Initial member reads must remain fresh and private.
 - Compose on the server: authenticate, read the typed model, then pass serializable initial data to `PublicHeader` and client children such as `ProfileEditForm` or `NotificationList`.
+- Profile avatar media uses the public `profile-avatars` bucket at the single owner path
+  `profiles/{auth.uid}/avatar`; the member hub derives its cache-busted public URL from profile data.
+- Render the push toggle only when the public VAPID configuration is complete; client props contain
+  only that public key, never delivery credentials or a private VAPID key.
+- Settings may display the email claim after `getClaims()` but must not treat it as an editable
+  profile field or authorization source.
 
 ## OWNERSHIP AND STATE
 
@@ -39,8 +47,8 @@
 ## LOCAL UI STATES
 
 - Keep profile loading/error behavior beside `/mypage/profile`: loading exposes `aria-busy`, and the client error boundary calls its supplied `reset`.
-- Profile read failure copy must stay Korean, actionable, and local to the profile segment; do not replace the boundary with a blank or cached shell.
-- For list reads, render the established `read_failure`, `empty`, and `ready` states without leaking private records or treating failure as empty data.
+- For list reads, keep `read_failure`, `empty`, and `ready` distinct. `notifications/page.tsx`
+  currently collapses a repository `null` to empty; treat that as a known gap, not coverage to copy.
 - Review history owns `ready`, `empty`, `out_of_range`, `read_failure`, `loading`, `error`; keep
   expected read failure inline and reserve the segment error boundary for unexpected throws.
 
@@ -54,6 +62,7 @@
 
 - Do not read member data before the auth/profile redirect branches or trust a client-supplied member ID.
 - Do not cache account-dependent pages, duplicate restricted-account redirects, or expose provider/payment secrets in page props.
+- Do not accept a withdrawal owner or timestamp from the browser; `/api/account` and the DB derive both.
 - Do not drop existing query context when adding links, replace typed read models with ad hoc Supabase reads, or move server-only clients into client components.
 - Do not remove the profile-local `loading.tsx`/`error.tsx` pair or silently turn read failures into empty states.
 
@@ -63,6 +72,8 @@
 - `corepack pnpm lint`
 - `corepack pnpm test:api`
 - `corepack pnpm test:e2e:profile-edit` for profile redirects, local states, and desktop/tablet/mobile evidence.
+- `corepack pnpm test:e2e:profile-avatar` for real Storage upload, profile persistence, reload,
+  member-summary rendering, delete confirmation, object cleanup, and responsive evidence.
 - `node --test tests/mypage-reviews-ui.test.mjs tests/mypage-reviews-documentation.test.mjs`
 - `node tests/auth-ui-e2e/run-mypage-reviews.mjs .omo/evidence/mypage-reviews-management/task-8/focused-summary.json`
 - `SPOLINK_VISUAL_QA_DIR=.omo/evidence/mypage-reservations-20260827/screenshots corepack pnpm test:e2e:reservations .omo/evidence/mypage-reservations-20260827/focused-summary.json` for member ownership, reservation state, filters, detail navigation, and 390/768/1280px evidence.

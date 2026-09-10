@@ -43,7 +43,12 @@ export async function capturePort3002() {
   throw new Error(`Expected at most one listener on 3002, found ${pids.join(",")}`)
 }
 
-export async function startNextServer({ mode, status, repoRoot = process.cwd() }) {
+export async function startNextServer({
+  mode,
+  naverMapsClientId,
+  status,
+  repoRoot = process.cwd(),
+}) {
   const externalBaseUrl = process.env.SPOLINK_TEST_BASE_URL
   if (externalBaseUrl) {
     await waitForConfiguredState(externalBaseUrl, mode === "configured")
@@ -58,7 +63,7 @@ export async function startNextServer({ mode, status, repoRoot = process.cwd() }
 
   const port = await selectNextPort(3006)
   const tempRoot = await createIsolatedNextWorkspace(repoRoot)
-  const env = buildNextEnv({ mode, status })
+  const env = buildNextEnv({ mode, naverMapsClientId, status })
   const child = spawn(
     "corepack",
     ["pnpm", "exec", "next", "dev", "--webpack", "--hostname", "127.0.0.1", "--port", String(port)],
@@ -130,8 +135,11 @@ async function removeIsolatedNextWorkspace(tempRoot) {
   await rm(resolved, { force: true, recursive: true })
 }
 
-function buildNextEnv({ mode, status }) {
+function buildNextEnv({ mode, naverMapsClientId, status }) {
   const env = pickRequiredEnv(["PATH", "HOME", "TMPDIR"])
+  if (naverMapsClientId) {
+    env.NAVER_MAPS_CLIENT_ID = naverMapsClientId
+  }
   if (mode === "configured") {
     if (!status?.apiUrl || !status?.anonKey) {
       throw new Error("Configured Next server requires local Supabase public status")

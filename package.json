@@ -29,6 +29,9 @@
     "test:e2e:payment": "node tests/auth-ui-e2e/run-payment-preparation.mjs",
     "test:e2e:reservations": "node tests/auth-ui-e2e/run-learner-reservations.mjs",
     "test:e2e:profile-edit": "node tests/auth-ui-e2e/run-mypage-profile-edit.mjs",
+    "test:e2e:profile-avatar": "node tests/auth-ui-e2e/run-profile-avatar.mjs",
+    "test:e2e:account-settings": "node tests/auth-ui-e2e/run-account-settings.mjs",
+    "test:e2e:notifications": "node tests/auth-ui-e2e/run-notification-push.mjs",
     "test:e2e:coach-dashboard": "node tests/auth-ui-e2e/run-coach-dashboard.mjs",
     "test:e2e:direction-alignment": "node tests/auth-ui-e2e/run-direction-alignment.mjs .omo/evidence/opencode-direction-alignment/task-14-visual-qa.json",
     "test:e2e:task-10": "node tests/auth-ui-e2e/run-task-10-ui.mjs .omo/evidence/high-priority-missing-services/task-10/ui.json",
@@ -37,6 +40,7 @@
     "test:e2e:supabase:evidence": "node tests/supabase-e2e/verify-evidence.mjs",
     "staging:contract": "node --test tests/staging-contract/*.test.mjs && node tests/staging-contract/write-gate0-checklist.mjs --output .omo/evidence/staging/gate-0-provider-checklist.json && node tests/staging-contract/run-fake-command-tests.mjs --case forbidden-commands --expect reject && node tests/staging-contract/run-fake-command-tests.mjs --case invalid-contract --expect reject && node tests/staging-contract/run-fake-command-tests.mjs --case valid-contract --expect approve && node tests/staging-contract/run-redaction-tests.mjs --fixtures jwt,cookie,key,email,uuid,project-ref,url",
     "staging:contract:test": "node --test tests/staging-contract/*.test.mjs",
+    "staging:verify:smtp": "node tests/staging-contract/verify-smtp-auth-flow.mjs --mailbox-provider mailtrap",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format": "biome check --write ."
@@ -49,6 +53,7 @@
     "next": "16.2.11",
     "react": "19.2.7",
     "react-dom": "19.2.7",
+    "web-push": "^3.6.7",
     "zod": "^4.4.3"
   },
   "pnpm": {
@@ -64,9 +69,11 @@
     "@iarna/toml": "2.2.5",
     "@playwright/test": "1.61.1",
     "@tailwindcss/postcss": "4.3.2",
+    "@types/navermaps": "^3.9.2",
     "@types/node": "26.1.1",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
+    "@types/web-push": "^3.6.4",
     "postgres": "3.4.9",
     "supabase": "2.109.1",
     "tailwindcss": "4.3.2",

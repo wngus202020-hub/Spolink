@@ -54,7 +54,7 @@ $$;
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.create_lesson_draft(uuid,text,text,text,text,text,text,integer,integer,integer,text,text)',
+    'public.create_lesson_draft(uuid,text,text,text,text,text,numeric,numeric,text,integer,integer,integer,text,text)',
     'EXECUTE'
   ),
   'authenticated sessions may reach the approved-coach RPC check'
@@ -62,7 +62,7 @@ select ok(
 select ok(
   not has_function_privilege(
     'anon',
-    'public.create_lesson_draft(uuid,text,text,text,text,text,text,integer,integer,integer,text,text)',
+    'public.create_lesson_draft(uuid,text,text,text,text,text,numeric,numeric,text,integer,integer,integer,text,text)',
     'EXECUTE'
   ),
   'anonymous sessions cannot create lesson drafts'
@@ -81,7 +81,7 @@ set local role authenticated;
 select throws_ok(
   $$select public.create_lesson_draft(
     '71000000-0000-4000-8000-000000000010', 'Pending lesson', null,
-    'Pending coaches cannot save this lesson.', '서울 강남구', null, null,
+    'Pending coaches cannot save this lesson.', '서울 강남구', null, null, null, null,
     60, 50000, 4, null, null
   )$$,
   'P0001', 'COACH_NOT_APPROVED',
@@ -94,10 +94,15 @@ set local role authenticated;
 create temporary table created_lesson on commit drop as
 select * from public.create_lesson_draft(
   '71000000-0000-4000-8000-000000000010', 'Approved lesson', 'Safe rally basics',
-  'Approved coaches can save a complete lesson draft.', '서울 강남구', null,
+  'Approved coaches can save a complete lesson draft.', '서울 강남구',
+  '서울특별시 강남구 테헤란로 123', 37.5012345, 127.0312345,
   'SPOLINK court', 60, 50000, 4, '운동화', '정책 요약'
 );
 select is((select status::text from created_lesson), 'draft', 'draft create is owner scoped');
+select is((select latitude from created_lesson), 37.5012345::numeric,
+  'draft stores the selected latitude');
+select is((select longitude from created_lesson), 127.0312345::numeric,
+  'draft stores the selected longitude');
 
 select ok(
   not has_function_privilege(
@@ -139,7 +144,7 @@ create temporary table rejected_candidate on commit drop as
 select * from public.create_lesson_draft(
   '71000000-0000-4000-8000-000000000010', 'Rejected lesson', null,
   'A rejected lesson can be corrected and submitted again.', '서울 강남구', null,
-  null, 60, 50000, 4, null, null
+  null, null, null, 60, 50000, 4, null, null
 );
 create temporary table rejected_pending on commit drop as
 select result.* from rejected_candidate lesson,

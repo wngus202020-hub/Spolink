@@ -235,7 +235,8 @@ POST /api/profiles
 - `displayName`은 2-30자, `realName`은 2-50자, `defaultRegion`은 2-80자다.
 - POST의 `defaultRegion`은 필수이며 `null`일 수 없다. 앞뒤 공백을 trim한 canonical 값만 저장한다.
 - 별칭, 자유 텍스트, 빈 문자열, `null`, 필드 생략은 422 `VALIDATION_ERROR`다.
-- `phone`은 `^01[016789]-[0-9]{3,4}-[0-9]{4}$`를 만족해야 한다.
+- POST의 `phone`은 `01012345678` 또는 `010-1234-5678` 형식을 허용하며, 서버는 하이픈이
+  포함된 canonical 형식으로 정규화한다. PATCH는 canonical 형식을 사용한다.
 - `locationAgreed`, `marketingAgreed`는 boolean이며 둘 다 `false`일 수 있다.
 - `location_agreed_at`, `marketing_agreed_at`은 해당 동의 값이 `true`이면 생성 트랜잭션 시각, `false`이면 `null`로 저장한다.
 - 서버는 항상 `id = auth.uid`, `role = learner`, `status = active`로 삽입한다.
@@ -266,7 +267,7 @@ PATCH /api/profiles/me
   "displayName": "길동",
   "phone": "010-1111-2222",
   "defaultRegion": "서울특별시 강남구",
-  "avatarPath": "profiles/user-id/avatar.png"
+  "avatarPath": "profiles/user-id/avatar"
 }
 ```
 
@@ -279,6 +280,7 @@ PATCH /api/profiles/me
 - PATCH의 `defaultRegion`은 canonical 값, `null`, 또는 필드 생략만 허용한다. canonical 값은 trim 후 검증하며, `null`은 값을 지운다.
 - `defaultRegion`을 생략한 unrelated PATCH는 기존 legacy 값을 그대로 보존한다.
 - `avatarPath`는 `profiles/{auth.uid}/`로 시작하고, 그 뒤 1-180자의 ASCII 영문/숫자/`._/-`만 허용한다. 빈 세그먼트, `..`, 역슬래시, 선행 슬래시는 금지한다.
+- 브라우저 사진 관리 UI는 공개 `profile-avatars` 버킷의 단일 `profiles/{auth.uid}/avatar` 객체만 사용한다. 버킷은 JPEG/PNG/WebP와 파일당 5 MiB 제한을 적용하고 insert/update/delete를 인증 소유자에게만 허용한다.
 - 생략한 동의 필드는 기존 값을 유지한다. `true`는 현재 timestamp가 `null`일 때만 트랜잭션 시각을 설정하고, `false`는 `null`로 지운다.
 - `id`, `role`, `status`, `deletedAt`, `deleted_at`, `createdAt`, `updatedAt` 등 시스템 필드는 요청에서 받을 수 없고, RLS/트리거로도 보호된다.
 - 기타 DB 오류는 세부 정보를 숨기고 500 `INTERNAL_ERROR`, `Unable to complete profile request.`를 반환한다.
@@ -290,6 +292,29 @@ PATCH /api/profiles/me
   "data": "ProfileData"
 }
 ```
+
+### 현재 계정 탈퇴
+
+```http
+DELETE /api/account
+권한: User
+Content-Type: application/json
+```
+
+요청:
+
+```json
+{ "confirmation": "탈퇴하기" }
+```
+
+- same-origin, JSON media type, strict body 검증을 순서대로 적용한다.
+- 대상 사용자 ID와 탈퇴 시각은 클라이언트에서 받지 않고 인증 세션과 DB 시각에서 파생한다.
+- 프로필 사진 객체 삭제가 실패하면 503 `ACCOUNT_CLEANUP_FAILED`로 중단한다.
+- 성공 시 `withdraw_current_account()`가 개인정보·사용자 설정을 정리하고 프로필을 `deleted`로
+  전환한 뒤 현재 브라우저 세션과 Auth flow cookie를 제거한다.
+- 동일 계정의 재시도는 기존 `deleted_at`을 반환하는 멱등 성공이다.
+- 성공 응답은 200 `{ "data": { "deletedAt": "UTC ISO", "idempotent": false } }`이며
+  `Cache-Control: private, no-store`다.
 
 ## 지도자 인증 API
 
@@ -521,6 +546,10 @@ GET /api/lessons
       "region": "서울 강남구",
       "priceAmount": 50000,
       "durationMinutes": 60,
+      "location": {
+        "latitude": 37.5012345,
+        "longitude": 127.0312345
+      },
       "coach": {
         "id": "uuid",
         "displayName": "홍코치",
@@ -541,6 +570,7 @@ GET /api/lessons
 
 - `lessons.status = active`만 공개 검색에 노출한다.
 - 승인된 지도자의 레슨만 노출한다.
+- 유효한 좌표 쌍이 있으면 `location`으로 반환하고, 없으면 `null`을 반환한다.
 
 ### 레슨 상세
 
@@ -555,6 +585,22 @@ GET /api/lessons/{lessonId}
 - 공개 사용자는 `active` 레슨만 조회한다.
 - 지도자는 자신의 비공개 레슨을 조회할 수 있다.
 - 관리자는 모든 레슨을 조회할 수 있다.
+
+### 레슨 생성
+
+### 레슨 주소 검색
+
+```http
+POST /api/maps/geocode
+권한: 승인된 Coach
+외부 연동: NAVER Maps Geocoding
+```
+
+요청은 same-origin JSON `{ "query": "테헤란로 123" }`이며 검색어는 2~200자다. 서버 전용
+`NAVER_MAPS_CLIENT_ID`, `NAVER_MAPS_CLIENT_SECRET`으로 제공자를 호출하고 도로명/지번 주소와
+위도·경도를 최대 5건 반환한다. 제공자 원문과 인증 정보는 반환하지 않으며 응답은
+`Cache-Control: private, no-store`다. 미인증 `401`, 미승인 지도자 `403`, 미설정 `503`, 제공자
+실패 `502`를 사용한다.
 
 ### 레슨 생성
 
@@ -593,6 +639,9 @@ draft
 
 이미지는 레슨 생성 요청에 포함하지 않는다. 초안 ID를 받은 뒤 아래 레슨 이미지 전용 API를
 선택 순서대로 호출한다.
+
+`latitude`와 `longitude`는 둘 다 생략하거나 유효 범위의 숫자 쌍으로 보내야 한다. 좌표를 보낼
+때는 `address`가 필수이며, 작성 RPC가 주소와 좌표를 한 트랜잭션으로 저장한다.
 
 ### 레슨 이미지 업로드 intent 생성
 
@@ -1478,6 +1527,34 @@ POST /api/notifications/{notificationId}/read
 예약 완료/노쇼, 리뷰 요청, 신고 처리 결과, 지도자 상태, 환불 결과, 정산 상태 알림은 해당 상태
 전이 트랜잭션 안에서 한 번만 기록된다.
 
+### 푸시 구독 등록/해제
+
+```http
+POST /api/notifications/push-subscriptions
+DELETE /api/notifications/push-subscriptions
+권한: User
+테이블: push_subscriptions
+```
+
+- same-origin JSON 요청만 허용하며 user ID는 세션에서 파생한다.
+- 등록 body는 표준 Web Push `endpoint`, nullable `expirationTime`, `keys.p256dh`, `keys.auth`다.
+- 삭제 body는 현재 브라우저의 `endpoint`만 받으며 owner-scoped RPC가 비활성화한다.
+- VAPID private key, 다른 기기의 endpoint/key, delivery 상태는 브라우저에 반환하지 않는다.
+
+### 푸시 전달 작업
+
+```http
+POST /api/notifications/push/deliver
+권한: Edge
+테이블: notifications, push_subscriptions, notification_push_deliveries
+```
+
+- body는 `{ "limit": 1..100 }`이며 기본값은 25다.
+- service role 전용 claim RPC가 due row를 `FOR UPDATE SKIP LOCKED`로 lease한다.
+- 성공은 `delivered`, 400/404/410은 구독 만료, 429/timeout/네트워크/5xx는 최대 5회
+  지수 backoff 재시도, 그 밖의 provider 거절은 해당 delivery를 terminal 실패로 기록한다.
+- 동일 claim token의 결과 재전송은 멱등이며 브라우저·일반 사용자 경로는 호출할 수 없다.
+
 ## 관리자 API
 
 ### 지도자 인증 대기 목록
@@ -1623,8 +1700,8 @@ POST /api/admin/reservations/{reservationId}/status
 - `lesson-images`는 공개 bucket이다. `ready` 메타데이터만 SPOLINK API/화면에 노출하지만,
   한 번 발급된 public CDN URL이 삭제 직후 모든 캐시에서 회수된다고 보장하지 않는다.
 - 만료 intent와 고아 객체 정리는 `corepack pnpm lesson-images:cleanup`으로 로컬에서 멱등 실행하며
-  이미지 mutation도 제한된 기회적 cleanup을 수행한다. Hosted Supabase 예약 스케줄러와 배포는
-  후속 작업이며 현재 구현으로 기술하지 않는다.
+  이미지 mutation도 제한된 기회적 cleanup을 수행한다. Hosted staging schema/Storage 배포는
+  완료됐지만 예약 scheduler/Edge Function은 후속 작업이며 현재 API로 기술하지 않는다.
 
 ## 상태 전이 보호 규칙
 

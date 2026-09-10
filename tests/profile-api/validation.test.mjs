@@ -13,7 +13,7 @@ test("profile request parsers reject system fields and normalize valid input", a
     displayName: " 홍길동 ",
     locationAgreed: true,
     marketingAgreed: false,
-    phone: "010-1234-5678",
+    phone: "01012345678",
     realName: " 홍길동 ",
   })
 

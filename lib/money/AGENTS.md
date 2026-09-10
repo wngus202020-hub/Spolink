@@ -10,17 +10,25 @@
 - `app/api/settlements/route.ts`: authenticated settlement list; admin/coach pages apply ownership.
 - `app/api/settlements/[settlementId]/approve/route.ts` and `hold/route.ts`: admin mutations.
 - `app/api/refunds/[refundId]/claim/route.ts` and `process/route.ts`: trusted Edge worker callbacks.
-- `supabase/migrations/20260814170000_add_refund_reconciliation_and_settlements.sql`: schema constraints, locks, RPCs, grants.
+- Money starts in `supabase/migrations/20260712000000_mvp_schema.sql`; follow the corrective chain through
+  `20260814000000_freeze_shared_transition_contracts.sql`, `20260814120000_add_reservation_lifecycle.sql`,
+  `20260814140000_add_notification_events.sql`, `20260814170000_add_refund_reconciliation_and_settlements.sql`,
+  and `20260818120000_use_statement_time_for_reservation_lifecycle.sql` before changing a transition.
 - `lib/supabase/database.types.ts`: typed RPC argument and return projection; keep it aligned with migrations.
 - `tests/money-operations-contract.test.mjs`: SQL/route boundary contract; `tests/money-operations-concurrency.test.mjs`: live races.
 - `supabase/tests/money_operations.test.sql`: pgTAP idempotency, result replay, and invariant cases.
 
 ## BOUNDARIES
 
-- Settlement reads use the cookie-aware server client. Admin status changes require same-origin JSON, an authenticated user, and the SQL active-admin check.
-- `claim_refund`, `process_refund_result`, and settlement generation routes require `Authorization: Bearer <SPOLINK_EDGE_SECRET>`; validate configured Edge and Supabase service environments first.
+- Settlement reads use the cookie-aware server client. `approve` and `hold` are same-origin JSON actions that
+  require an authenticated active admin through `set_settlement_status`.
+- Trusted Edge applies settlement generation, refund claim, and refund result processing through
+  `POST /api/settlements/generate`, `POST /api/refunds/:refundId/claim`, and
+  `POST /api/refunds/:refundId/process` with `Authorization: Bearer <SPOLINK_EDGE_SECRET>`.
 - Trusted Edge callbacks use `createSupabaseServiceClient()` only to invoke the narrow RPC. Never expose `SUPABASE_SERVICE_ROLE_KEY` or `SPOLINK_EDGE_SECRET` to browser code.
 - Route code does not call Toss. A trusted worker claims/processes a refund and supplies verified provider results; payout execution remains outside this MVP.
+- Invalid non-empty settlement filters make `listSettlements` throw `InvalidSettlementFilterError`; the list
+  route has no local catch/mapping, so its HTTP behavior is a boundary to verify rather than fixed behavior.
 
 ## CONTRACTS
 

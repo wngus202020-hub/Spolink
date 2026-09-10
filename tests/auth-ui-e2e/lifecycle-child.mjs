@@ -95,6 +95,16 @@ export function buildNextChildEnv(
     NEXT_PUBLIC_SUPABASE_ANON_KEY: status.anonKey,
     NEXT_PUBLIC_SUPABASE_URL: status.apiUrl,
     SUPABASE_SERVICE_ROLE_KEY: status.serviceRoleKey,
+    ...(hasWebPushEnv(parentEnv)
+      ? {
+          NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY: parentEnv["NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY"],
+          WEB_PUSH_VAPID_PRIVATE_KEY: parentEnv["WEB_PUSH_VAPID_PRIVATE_KEY"],
+          WEB_PUSH_VAPID_SUBJECT: parentEnv["WEB_PUSH_VAPID_SUBJECT"],
+        }
+      : {}),
+    ...(parentEnv["SPOLINK_EDGE_SECRET"]
+      ? { SPOLINK_EDGE_SECRET: parentEnv["SPOLINK_EDGE_SECRET"] }
+      : {}),
     ...(parentEnv["SPOLINK_VISUAL_QA_DIR"] ? { NEXT_PRIVATE_DISABLE_DEV_OVERLAY_UX: "1" } : {}),
     ...(enableCoachUiFixtures
       ? {
@@ -110,6 +120,14 @@ export function buildNextChildEnv(
       : {}),
     SPOLINK_AUTH_FLOW_SECRET: Buffer.alloc(32, 7).toString("base64url"),
   })
+}
+
+function hasWebPushEnv(parentEnv) {
+  return [
+    "NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY",
+    "WEB_PUSH_VAPID_PRIVATE_KEY",
+    "WEB_PUSH_VAPID_SUBJECT",
+  ].every((key) => typeof parentEnv[key] === "string" && parentEnv[key].length > 0)
 }
 
 export async function waitForConfiguredState(baseUrl) {

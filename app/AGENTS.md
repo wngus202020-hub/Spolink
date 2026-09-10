@@ -11,12 +11,12 @@ Domain rules live in `lib/`; interactive state lives in `components/`.
 app/
 ├── admin/           # Back-office coach, lesson, report, reservation, settlement operations
 ├── api/             # Public/private reads and workflow Route Handlers
-├── auth/            # Login, signup, callback, recovery, logout, restricted account flows
+├── auth/            # Login, signup, callback, recovery, logout; read `auth/AGENTS.md`
 ├── coach/           # Certification application plus approved-coach operations
-├── lessons/         # Discovery, detail, and booking pages
+├── lessons/         # Discovery, detail, map/coordinate-backed results, and booking pages
 ├── mypage/          # Authenticated member journeys; read `mypage/AGENTS.md`
 ├── onboarding/      # Required profile completion
-└── reservations/    # Payment and confirmed-and-paid completion pages
+└── reservations/    # Payment and confirmed-and-paid completion; read its child guide
 ```
 
 ## ROUTE RULES

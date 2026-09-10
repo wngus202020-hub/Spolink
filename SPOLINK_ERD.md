@@ -162,7 +162,7 @@ Supabase Auth 사용자와 1:1로 연결되는 앱 사용자 프로필.
 | display_name | text | not null | 표시 이름 |
 | real_name | text | nullable | 실명, 내부 검증용 |
 | phone | text | nullable | 연락처 |
-| avatar_path | text | nullable | Supabase Storage 경로 |
+| avatar_path | text | nullable | 공개 `profile-avatars` Storage의 `profiles/{userId}/avatar` 경로 |
 | default_region | text | nullable | 기본 활동 지역 |
 | marketing_agreed_at | timestamptz | nullable | 마케팅 동의 |
 | location_agreed_at | timestamptz | nullable | 위치정보 동의 |
@@ -183,6 +183,10 @@ Supabase Auth 사용자와 1:1로 연결되는 앱 사용자 프로필.
 신청자 직접 insert/update로 상태, 제출/심사 시각, 심사자, 반려 사유를 바꿀 수 없다.
 `upsert_coach_application_draft`, `submit_coach_application`, `review_coach_application` RPC가
 각각 draft 저장, 제출, 관리자 심사의 원자적 쓰기 경계다.
+
+`withdraw_current_account()`는 인자를 받지 않고 `auth.uid()`로 탈퇴 대상을 결정한다. 프로필을
+`deleted`로 바꾸고 개인정보와 사용자 설정을 정리하며 `account.withdrawn` 감사 로그를 한 번만
+기록한다. 예약·결제·환불·정산 및 신고 기록과 Auth 사용자는 보존한다.
 
 인덱스:
 
@@ -295,10 +299,10 @@ Storage 계약:
 | summary | text | nullable | 짧은 설명 |
 | description | text | not null | 상세 설명 |
 | region | text | not null | 지역 |
-| address | text | nullable | 상세 주소 |
+| address | text | nullable | 검색·선택한 정규화 주소 또는 기존 상세 주소 |
 | place_name | text | nullable | 장소명 |
-| latitude | numeric | nullable | 위도 |
-| longitude | numeric | nullable | 경도 |
+| latitude | numeric | nullable, -90..90 | 주소 좌표 위도 |
+| longitude | numeric | nullable, -180..180 | 주소 좌표 경도 |
 | duration_minutes | integer | not null | 수업 시간 |
 | price_amount | integer | not null | 가격, KRW |
 | capacity | integer | not null, default 1 | 정원 |
@@ -307,6 +311,9 @@ Storage 계약:
 | paused_reason | text | nullable | 일시 중지 사유 |
 | created_at | timestamptz | not null | 생성 시각 |
 | updated_at | timestamptz | not null | 수정 시각 |
+
+`latitude`와 `longitude`는 둘 다 null이거나 유효 범위의 숫자 쌍이어야 한다. 좌표가 있으면
+`address`도 있어야 하며, 승인된 지도자 전용 생성/수정 RPC만 세 값을 함께 기록한다.
 
 인덱스:
 
@@ -655,7 +662,7 @@ reviewed_at은 workflow에서 파생하고 일반 사용자와 admin의 직접 i
 
 ### `notifications`
 
-앱 내 알림. FCM 연동 전에도 사용할 수 있는 기본 알림 저장소.
+앱 내 알림의 기준 저장소. Supabase Realtime publication과 Web Push outbox의 원본이다.
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
@@ -688,6 +695,41 @@ reviewed_at은 workflow에서 파생하고 일반 사용자와 admin의 직접 i
 | report.resolved | reportId, status |
 | refund.result | refundId, reservationId, status |
 | settlement.status_changed | settlementId, reservationId, status |
+
+### `push_subscriptions`
+
+사용자가 브라우저에서 명시적으로 허용한 private Web Push 구독이다. 일반 사용자는 owner-scoped
+RPC로만 등록/비활성화하고 endpoint 및 암호화 키를 직접 조회하지 않는다.
+
+| 컬럼 | 타입 | 제약 | 설명 |
+|------|------|------|------|
+| id | uuid | PK | 구독 ID |
+| user_id | uuid | FK -> profiles.id | 소유자 |
+| endpoint | text | unique(user_id, endpoint) | HTTPS Push Service endpoint |
+| p256dh | text | bounded | 브라우저 공개 암호화 키 |
+| auth | text | bounded | 브라우저 auth secret |
+| expiration_time | timestamptz | nullable | 브라우저 제공 만료 시각 |
+| disabled_at | timestamptz | nullable | 비활성화 시각 |
+| created_at, updated_at | timestamptz | not null | 생성/변경 시각 |
+
+### `notification_push_deliveries`
+
+알림 insert와 같은 트랜잭션에서 구독별로 생성되는 private delivery outbox다.
+
+| 컬럼 | 타입 | 제약 | 설명 |
+|------|------|------|------|
+| id | uuid | PK | 전달 ID |
+| notification_id | uuid | FK -> notifications.id | 원본 알림 |
+| subscription_id | uuid | FK -> push_subscriptions.id | 대상 구독 |
+| status | notification_push_delivery_status | not null | pending/processing/retry/delivered/dead |
+| attempt_count | integer | 0-5 | claim 횟수 |
+| next_attempt_at | timestamptz | not null | 다음 시도 시각 |
+| claim_token | uuid | nullable | 결과 기록용 lease token |
+| claimed_at, claim_expires_at | timestamptz | nullable | lease 시각 |
+| result_action | notification_push_result_action | nullable | 마지막 provider 결과 action |
+| last_error_code | text | nullable, bounded | 비식별 실패 코드 |
+| delivered_at | timestamptz | nullable | 전달 완료 시각 |
+| created_at, updated_at | timestamptz | not null | 생성/변경 시각 |
 
 ### `audit_logs`
 
@@ -801,7 +843,8 @@ erDiagram
 `lesson-images` Storage bucket은 파일당 5 MiB와 JPEG/PNG/WebP를 제한하지만 public read 자체는
 의도적으로 허용한다. DB/API에서 삭제 즉시 제외하는 것은 보장하되 이미 알려진 CDN URL의 모든
 캐시를 즉시 회수한다고 보장하지 않는다. 만료 intent/고아 객체 cleanup은 현재 로컬 명령과 이미지
-mutation의 bounded 기회적 실행만 구현되어 있으며 Hosted scheduler/deployment는 후속 범위다.
+mutation의 bounded 기회적 실행만 구현되어 있다. Hosted staging schema/Storage 배포는 완료됐지만
+정기 scheduler는 후속 범위다.
 
 ## 상태 전이 규칙
 

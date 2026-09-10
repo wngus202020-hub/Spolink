@@ -51,6 +51,10 @@ const pickerSource = await readFile(
   new URL("../components/profile/profile-region-picker.tsx", import.meta.url),
   "utf8",
 )
+const onboardingSource = await readFile(
+  new URL("../components/onboarding/profile-onboarding-form.tsx", import.meta.url),
+  "utf8",
+)
 
 test("Given the generated region catalog, profile choices retain Korean helper ordering", () => {
   const options = pickerModule.getProfileRegionOptions("")
@@ -94,6 +98,19 @@ test("Given CJK search text, the picker exposes only canonical province or distr
   assert.equal(pickerModule.isCanonicalProfileRegion("전국"), false)
   assert.equal(pickerModule.isCanonicalProfileRegion(""), false)
   assert.equal(pickerModule.isCanonicalProfileRegion(null), false)
+})
+
+test("Given signup onboarding mode, region suggestions stay hidden until input and stop at two", () => {
+  assert.deepEqual(pickerModule.getProfileRegionSuggestions("", 2), [])
+
+  const suggestions = pickerModule.getProfileRegionSuggestions("서울", 2)
+  assert.equal(suggestions.length, 2)
+  assert.equal(
+    suggestions.every((option) => pickerModule.isCanonicalProfileRegion(option.value)),
+    true,
+  )
+  assert.match(onboardingSource, /maxSuggestions=\{2\}/u)
+  assert.match(onboardingSource, /suggestionsOnly/u)
 })
 
 test("Given a legacy noncanonical value, explicit canonical selection is required before output", () => {

@@ -13,7 +13,7 @@ export default function RootLayout({
   children: ReactNode
 }>) {
   return (
-    <html lang="ko">
+    <html data-scroll-behavior="smooth" lang="ko">
       <body>{children}</body>
     </html>
   )

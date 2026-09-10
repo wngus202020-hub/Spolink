@@ -1,4 +1,5 @@
 import type { InputHTMLAttributes, ReactNode, RefObject } from "react"
+import { TextInput } from "@/components/ui/form-controls"
 
 type AuthTextFieldProps = Readonly<
   Omit<InputHTMLAttributes<HTMLInputElement>, "className"> & {
@@ -38,10 +39,9 @@ export function AuthTextField({
       <label className="text-sm font-bold text-primary" htmlFor={id}>
         {label}
       </label>
-      <input
+      <TextInput
         aria-describedby={messageId}
         aria-invalid={error ? true : undefined}
-        className="min-h-11 w-full min-w-0 rounded-[var(--radius-sm)] border border-line bg-inset px-4 py-3 text-base text-primary outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-tertiary focus:border-primary focus:ring-2 focus:ring-primary/15"
         id={id}
         ref={inputRef}
         type={type}

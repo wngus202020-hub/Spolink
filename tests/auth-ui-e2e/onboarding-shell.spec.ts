@@ -110,6 +110,7 @@ test("profile onboarding sends exact payload once and preserves optional consent
 
     await page.goto("/onboarding/profile")
     await fillProfile(page)
+    await page.getByLabel("휴대폰 번호").fill("01012345678")
     const explicitRegionSelection =
       (await page
         .getByRole("button", { name: /서울특별시 · 강남구/u })
@@ -122,6 +123,13 @@ test("profile onboarding sends exact payload once and preserves optional consent
       readPayloads: () => payloads,
     })
     expect(submissionReceipt).toMatchObject({ profileRequestCount: 1, verdict: "APPROVE" })
+    expect(payloads).toEqual([
+      {
+        ...profile,
+        locationAgreed: false,
+        marketingAgreed: false,
+      },
+    ])
   } finally {
     await cleanupLiveAuthUser(email)
   }
@@ -159,11 +167,17 @@ test("profile onboarding rejects search text until a canonical region option is 
     })
 
     await page.goto("/onboarding/profile")
+    const regionSearch = page.getByRole("searchbox", { name: "지역 검색" })
+    const regionChoices = page.locator('fieldset[aria-label="지역 선택지"] button')
+    await expect(regionChoices).toHaveCount(0)
+    await expect(page.getByText("지역명을 입력하면 후보를 최대 2개 보여드려요.")).toBeVisible()
+    await regionSearch.fill("서울")
+    await expect(regionChoices).toHaveCount(2)
+
     await fillProfile(page, { selectRegion: false })
     await page.getByRole("button", { name: "레슨 찾기 시작" }).click()
 
     await expect(page.getByText("기본 활동 지역을 선택해 주세요.")).toBeVisible()
-    const regionSearch = page.getByRole("searchbox", { name: "지역 검색" })
     await expect(regionSearch).toBeFocused()
     await expect(regionSearch).toHaveAttribute("aria-invalid", "true")
     await expect(regionSearch).toHaveAttribute(

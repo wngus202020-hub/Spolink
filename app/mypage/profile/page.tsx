@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation"
 import { PublicHeader } from "@/components/layout/public-header"
+import { ProfileAvatarManager } from "@/components/profile/profile-avatar-manager"
 import { ProfileEditForm } from "@/components/profile/profile-edit-form"
 import { readPageAuthProfile } from "@/lib/auth/page-auth"
+import { PROFILE_AVATAR_BUCKET } from "@/lib/profile/avatar-contract"
+import { getSupabasePublicStorageUrl } from "@/lib/supabase/public-read-client"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -23,6 +26,12 @@ export default async function ProfileEditPage() {
     locationAgreed: auth.profile.location_agreed_at !== null,
     marketingAgreed: auth.profile.marketing_agreed_at !== null,
   }
+  const avatarBaseUrl = auth.profile.avatar_path
+    ? getSupabasePublicStorageUrl(auth.profile.avatar_path, PROFILE_AVATAR_BUCKET)
+    : null
+  const initialAvatarUrl = avatarBaseUrl
+    ? `${avatarBaseUrl}?v=${encodeURIComponent(auth.profile.updated_at)}`
+    : null
 
   return (
     <main className="min-h-[100dvh]">
@@ -54,6 +63,12 @@ export default async function ProfileEditPage() {
             </p>
           </div>
 
+          <ProfileAvatarManager
+            displayName={auth.profile.display_name}
+            initialAvatarPath={auth.profile.avatar_path}
+            initialAvatarUrl={initialAvatarUrl}
+            userId={auth.profile.id}
+          />
           <ProfileEditForm initialProfile={initialProfile} />
         </section>
       </section>

@@ -20,6 +20,22 @@
 - Private calendar GET: owner-only, completion-state-checked ICS download; it is not an ordinary
   JSON mutation.
 
+## FOCUSED INVENTORY
+
+- `DELETE /api/account`: authenticated soft withdrawal; the workflow and DB derive the owner and
+  effective time, never the browser.
+- `POST /api/maps/geocode`: same-origin JSON address search for an approved coach only; provider
+  configuration failure remains a safe unavailable response.
+- `POST|DELETE /api/notifications/push-subscriptions`: authenticated browser subscription writes
+  scoped to the current owner. Browser code receives only the configured public VAPID key.
+- `POST /api/notifications/push/deliver`: trusted delivery-worker boundary, protected by the Edge
+  secret; it is never callable by an ordinary browser session.
+- `/api/reservations`: create, payment, cancellation, no-show, and completion lifecycle routes;
+  `/api/reservations/[reservationId]/calendar` is the owner-only completed ICS download.
+- `/api/refunds` and `/api/settlements`: server-authoritative reconciliation and operational money
+  transitions. `/api/lessons/*/images` keeps upload intent, ordering, and media ownership checks in
+  the typed lesson workflow.
+
 ## ORDINARY JSON MUTATION ORDER
 
 1. Check same-origin plus method and JSON content type.
@@ -38,12 +54,14 @@ Applicant/admin routes never accept profile status, reviewer, review timestamps,
 ## SECURITY
 - Use cookie-aware anon clients for ordinary routes.
 - Keep service-role clients inside trusted provider/reconciliation or private-certificate boundaries.
-- Do not expose signed certificate URLs except through the intended owner/admin route; admin signed reads expire in 300 seconds.
+- Applicant certificate reads stay owner-scoped by Storage RLS. Expose signed URLs only through the
+  active-admin route, and keep their expiry at 300 seconds.
 - Preserve 401/403/404/409/422 contracts and safe `next` redirects.
 
 ## VERIFY
 ```bash
 corepack pnpm test:api:contracts
+node --test tests/account-withdrawal.test.mjs tests/lesson-geocoding.test.mjs tests/notification-push.test.mjs tests/reservation-calendar-route.test.mjs
 corepack pnpm test:coach-certification
 corepack pnpm typecheck
 ```

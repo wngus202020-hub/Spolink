@@ -2,9 +2,10 @@
 
 import { CalendarPlus, LockKeyhole } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { type FormEvent, useEffect, useRef, useState } from "react"
+import { type FormEvent, useEffect, useId, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
+import { TextInput } from "@/components/ui/form-controls"
 import {
   closeLessonSchedule,
   createLessonSchedule,
@@ -193,38 +194,37 @@ function ScheduleFields({
   disabled,
   schedule,
 }: Readonly<{ disabled: boolean; schedule?: ScheduleAuthoringData }>) {
-  const inputClassName =
-    "min-h-11 rounded-[var(--radius-md)] border border-line bg-canvas px-3 py-2 text-primary disabled:bg-inset disabled:text-tertiary"
+  const fieldId = useId()
   return (
     <div className="grid gap-4 md:grid-cols-3">
-      <label className="grid gap-2 text-sm font-bold text-primary">
+      <label className="grid gap-2 text-sm font-bold text-primary" htmlFor={`${fieldId}-starts`}>
         시작
-        <input
-          className={inputClassName}
+        <TextInput
           defaultValue={schedule ? toKstInput(schedule.startsAt) : undefined}
           disabled={disabled}
+          id={`${fieldId}-starts`}
           name="startsAt"
           required
           type="datetime-local"
         />
       </label>
-      <label className="grid gap-2 text-sm font-bold text-primary">
+      <label className="grid gap-2 text-sm font-bold text-primary" htmlFor={`${fieldId}-ends`}>
         종료
-        <input
-          className={inputClassName}
+        <TextInput
           defaultValue={schedule ? toKstInput(schedule.endsAt) : undefined}
           disabled={disabled}
+          id={`${fieldId}-ends`}
           name="endsAt"
           required
           type="datetime-local"
         />
       </label>
-      <label className="grid gap-2 text-sm font-bold text-primary">
+      <label className="grid gap-2 text-sm font-bold text-primary" htmlFor={`${fieldId}-capacity`}>
         정원
-        <input
-          className={inputClassName}
+        <TextInput
           defaultValue={schedule?.capacity ?? 1}
           disabled={disabled}
+          id={`${fieldId}-capacity`}
           max={100}
           min={1}
           name="capacity"

@@ -1,11 +1,13 @@
 "use client"
 
+import ky from "ky"
 import { ArrowRight, ShieldAlert } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { type FormEvent, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { createSupabaseBrowserClient } from "@/lib/supabase/client"
+import { SupabaseConfigError } from "@/lib/supabase/env"
 import {
   focusFirstInvalidField,
   GENERIC_AUTH_ERROR,
@@ -60,26 +62,38 @@ export function LoginForm({ restrictedMessage }: LoginFormProps) {
     setSubmitting(true)
     setErrors({})
 
-    const supabase = createSupabaseBrowserClient()
-    const signIn = await supabase.auth.signInWithPassword({ email, password })
-    if (signIn.error) {
-      failLogin()
-      return
-    }
+    try {
+      const supabase = createSupabaseBrowserClient()
+      const signIn = await supabase.auth.signInWithPassword({ email, password })
+      if (signIn.error) {
+        failLogin()
+        return
+      }
 
-    const profileResponse = await fetch("/api/me", {
-      cache: "no-store",
-      credentials: "same-origin",
-    })
-    const destination = await resolveProfileDestination(profileResponse, nextPath)
-    if (destination.kind === "error") {
-      failLogin(destination.message)
+      const profileResponse = await ky.get("/api/me", {
+        cache: "no-store",
+        credentials: "same-origin",
+        retry: 0,
+        throwHttpErrors: false,
+        timeout: 5_000,
+      })
+      const destination = await resolveProfileDestination(profileResponse, nextPath)
+      if (destination.kind === "error") {
+        failLogin(destination.message)
+        return
+      }
+      if (destination.kind === "account-deleted" || destination.kind === "account-suspended") {
+        await supabase.auth.signOut()
+      }
+      router.replace(destination.href)
+    } catch (error) {
+      failLogin(
+        error instanceof SupabaseConfigError
+          ? "로그인 서버 연결이 준비되지 않았어요. 잠시 후 다시 시도해요."
+          : undefined,
+      )
       return
     }
-    if (destination.kind === "account-deleted" || destination.kind === "account-suspended") {
-      await supabase.auth.signOut()
-    }
-    router.replace(destination.href)
   }
 
   function failLogin(message = GENERIC_AUTH_ERROR) {

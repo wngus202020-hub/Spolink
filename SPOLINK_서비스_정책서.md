@@ -10,7 +10,9 @@ SPOLINK MVP에서 구현 전에 고정해야 할 서비스 운영 정책을 정�
 - 인증은 `Supabase Auth`를 기준으로 한다.
 - DB는 Supabase PostgreSQL을 기준으로 한다.
 - 파일 저장은 Supabase Storage를 기준으로 한다.
-- 실시간 예약 상태, 채팅, 알림 이벤트는 Supabase Realtime 또는 Edge Functions 기반으로 검토한다.
+- 알림은 Supabase Realtime의 인증·replication-ready·catch-up 흐름으로 전달하고, Web Push는
+  사용자 명시 동의, private 구독, transactional outbox, trusted worker를 기준으로 한다.
+- 채팅과 대규모 실시간 fan-out은 Phase 2에서 Supabase Broadcast 또는 Edge Functions로 검토한다.
 - 결제는 Toss Payments를 기준으로 한다.
 - 프론트엔드는 Next.js, React, TypeScript, Tailwind CSS, shadcn/ui를 기준으로 한다.
 - NestJS, Prisma, Redis, Socket.IO는 MVP 이후 서버 복잡도가 커질 때 재검토한다.
@@ -72,8 +74,12 @@ SPOLINK MVP에서 구현 전에 고정해야 할 서비스 운영 정책을 정�
 ### 탈퇴
 
 - 탈퇴 시 로그인과 신규 예약은 즉시 제한한다.
-- 진행 중 예약, 결제, 환불, 정산이 있으면 완료 후 개인정보 보관 정책에 따라 삭제 또는 비식별 처리한다.
+- 탈퇴는 앱 프로필을 `deleted`로 전환하는 소프트 탈퇴이며 행위자와 시각은 DB가 인증 세션에서 결정한다.
+- 프로필 개인정보, 지도자 소개·정산 계좌 요약, 찜, 차단, 알림과 Push 구독은 탈퇴 처리에서 정리한다.
+- 공개 프로필 사진 객체가 있으면 상태 전환 전에 소유자 세션으로 삭제하며, 정리에 실패하면 탈퇴를 진행하지 않는다.
+- 진행 중 예약, 결제, 환불, 정산이 있으면 완료 후 개인정보 보관 정책에 따라 추가 삭제 또는 비식별 처리한다.
 - 법령 또는 분쟁 대응에 필요한 결제/정산 기록은 보관 기간을 별도로 둔다.
+- Auth 식별자는 재가입 충돌 방지와 보관 기록 연결을 위해 MVP 소프트 탈퇴에서 물리 삭제하지 않는다.
 
 ## 지도자 인증 정책
 
@@ -178,6 +184,8 @@ SPOLINK MVP에서 구현 전에 고정해야 할 서비스 운영 정책을 정�
 - 레슨과 일정 작성/수정은 지도자 신청과 계정 상태가 각각 `approved`, `coach_approved`인 본인만
   가능하다. 일반 사용자와 관리자도 상태·심사자·시각을 테이블에 직접 기록할 수 없다.
 - 가격, 장소, 시간, 정원 정보가 없는 레슨은 노출하지 않는다.
+- 주소 검색은 승인된 지도자에게만 제공하고 제공자 인증 정보는 서버에만 둔다. 검색 결과를
+  선택한 경우 정규화 주소와 위·경도를 함께 저장하며, 실시간 사용자 위치는 저장하지 않는다.
 
 ### 레슨 이미지
 
@@ -191,8 +199,9 @@ SPOLINK MVP에서 구현 전에 고정해야 할 서비스 운영 정책을 정�
   객체/intent cleanup과 없는 객체 삭제는 멱등이며, 물리 삭제 실패는 `deleting` 영수증으로 재시도한다.
 - public `lesson-images` bucket을 사용하므로 앱 DB/API/화면에서는 삭제 즉시 제외하지만 이미 알려진
   public CDN URL이 모든 캐시에서 즉시 회수된다고 보장하지 않는다.
-- 로컬 MVP는 `corepack pnpm lesson-images:cleanup`과 이미지 mutation의 bounded 기회적 cleanup을
-  제공한다. Hosted Supabase 배포와 정기 scheduler는 별도 후속 작업이며 현재 운영 기능이 아니다.
+- `corepack pnpm lesson-images:cleanup`과 이미지 mutation의 bounded 기회적 cleanup을 제공한다.
+  Hosted staging에는 schema와 Storage 정책이 배포됐지만 정기 cleanup scheduler/Edge Function은
+  아직 없으며 운영 기능으로 간주하지 않는다.
 - 신고 누적, 허위 정보, 안전 문제 발생 시 관리자가 레슨을 중지할 수 있다.
 
 ## 예약 정책
@@ -440,6 +449,8 @@ MVP에서 다루는 개인정보는 다음과 같다.
 - 위치 기반 검색은 사용자 동의 후 사용한다.
 - MVP에서는 현재 위치 또는 사용자가 입력한 지역을 기준으로 검색한다.
 - 정확한 실시간 위치 추적은 MVP 범위에서 제외한다.
+- 공개 지도 보기는 지도자가 레슨에 등록한 장소 좌표만 사용한다. 사용자의 현재 위치를 요청하거나
+  저장하지 않으며 거리순·지도 경계 재검색은 별도 동의와 정책을 정한 뒤 제공한다.
 
 ### 보관 원칙
 

@@ -2,13 +2,13 @@ import type { AuthUser } from "@/lib/profile/types"
 import type { NotificationRepository } from "./repository"
 import type { NotificationPage, NotificationQuery } from "./types"
 
-type Access = Readonly<{
+export type NotificationAccess = Readonly<{
   profileId: string
   user: AuthUser
 }>
 
 export type NotificationWorkflowDependencies = Readonly<{
-  getAccess: () => Promise<Access | "unauthenticated" | "restricted">
+  getAccess: () => Promise<NotificationAccess | "unauthenticated" | "restricted">
   repository: NotificationRepository
 }>
 

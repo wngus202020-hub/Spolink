@@ -16,6 +16,9 @@ browser-side booking request. Pages own server data; `lib/` owns the authority-b
 - Preserve tab roles, arrow/Home/End navigation, selected-panel IDs, and the search trigger focus
   return when changing the picker or sheet.
 - Native date input accepts only `YYYY-MM-DD`; preserve server-provided initial filters on rerender.
+- `lesson-results-view.tsx` owns the list/map mode only; filters stay URL-owned by the picker/page.
+- `lesson-map.tsx` renders valid stored coordinate pairs through NAVER Maps and keeps marker and
+  result-row selection synchronized. Missing credentials or coordinates must not break list view.
 
 ## REGION CATALOG
 

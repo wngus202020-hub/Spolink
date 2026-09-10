@@ -62,6 +62,25 @@ try {
     viewport: { width: 1280, height: 900 },
   })
   const coachPage = await coachContext.newPage()
+  await coachPage.route("**/api/maps/geocode", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        data: {
+          locations: [
+            {
+              address: "서울특별시 강남구 테헤란로 123",
+              jibunAddress: "서울특별시 강남구 역삼동 123",
+              latitude: 37.5012345,
+              longitude: 127.0312345,
+              roadAddress: "서울특별시 강남구 테헤란로 123",
+            },
+          ],
+        },
+      }),
+      contentType: "application/json",
+      status: 200,
+    })
+  })
   await loginQaPage(coachPage, coachEmail, password, "/coach/lessons/new")
   await coachPage.getByLabel("레슨 제목").fill("브라우저 검증 테니스 레슨")
   await coachPage.getByLabel("종목").selectOption(String(sport.id))
@@ -71,6 +90,17 @@ try {
     .fill("초보자가 안전하게 기본 자세와 랠리를 익히는 수업입니다.")
   await coachPage.getByLabel("지역").fill("서울 강남구")
   await coachPage.getByLabel("장소명").fill("SPOLINK 코트")
+  await coachPage.getByRole("searchbox", { name: "주소 검색" }).fill("테헤란로 123")
+  await coachPage.getByRole("button", { name: "주소 검색" }).click()
+  await coachPage.getByRole("button", { name: /서울특별시 강남구 테헤란로 123/u }).click()
+  await coachPage.getByText("주소를 선택했습니다.", { exact: true }).waitFor()
+  await coachPage.getByRole("button", { name: "선택한 주소 지우기" }).click()
+  assert.equal(await coachPage.locator('input[name="address"]').inputValue(), "")
+  assert.equal(await coachPage.locator('input[name="latitude"]').inputValue(), "")
+  assert.equal(await coachPage.locator('input[name="longitude"]').inputValue(), "")
+  await coachPage.getByRole("searchbox", { name: "주소 검색" }).fill("테헤란로 123")
+  await coachPage.getByRole("button", { name: "주소 검색" }).click()
+  await coachPage.getByRole("button", { name: /서울특별시 강남구 테헤란로 123/u }).click()
   await coachPage.getByLabel("수업 시간(분)").fill("60")
   await coachPage.getByLabel("가격(원)").fill("50000")
   await coachPage.getByLabel("기본 정원").fill("4")
@@ -88,6 +118,12 @@ try {
   await coachPage.waitForURL(/\/coach\/lessons\/[0-9a-f-]+\/edit$/u)
   lessonId = new URL(coachPage.url()).pathname.split("/").at(-2) ?? null
   assert.ok(lessonId)
+  const [storedLocation] = await sql`
+    select address, latitude, longitude from public.lessons where id = ${lessonId}
+  `
+  assert.equal(storedLocation?.address, "서울특별시 강남구 테헤란로 123")
+  assert.equal(Number(storedLocation?.latitude), 37.5012345)
+  assert.equal(Number(storedLocation?.longitude), 127.0312345)
   assert.equal((await coachPage.request.get(`/api/lessons/${lessonId}`)).status(), 404)
   await coachPage.screenshot({
     fullPage: true,
@@ -99,8 +135,8 @@ try {
 
   await coachPage.goto(`/coach/lessons/${lessonId}/schedules`)
   const scheduleForm = coachPage.locator("form").filter({ hasText: "새 일정" })
-  await scheduleForm.getByLabel("시작").fill("2026-08-20T10:00")
-  await scheduleForm.getByLabel("종료").fill("2026-08-20T11:00")
+  await scheduleForm.getByLabel("시작").fill("2026-10-20T10:00")
+  await scheduleForm.getByLabel("종료").fill("2026-10-20T11:00")
   await scheduleForm.getByLabel("정원").fill("4")
   await scheduleForm.getByRole("button", { name: "일정 추가" }).click()
   await coachPage.getByText("일정을 추가했습니다.", { exact: true }).waitFor()
@@ -149,8 +185,8 @@ try {
   const raceCreate = await coachPage.request.post(`/api/lessons/${lessonId}/schedules`, {
     data: {
       capacity: 4,
-      endsAt: "2026-08-21T02:00:00.000Z",
-      startsAt: "2026-08-21T01:00:00.000Z",
+      endsAt: "2026-10-21T02:00:00.000Z",
+      startsAt: "2026-10-21T01:00:00.000Z",
     },
     headers: { origin: server.baseUrl },
   })
@@ -160,17 +196,17 @@ try {
     coachPage.request.patch(`/api/lessons/${lessonId}/schedules/${raceSchedule.id}`, {
       data: {
         capacity: 5,
-        endsAt: "2026-08-21T04:00:00.000Z",
+        endsAt: "2026-10-21T04:00:00.000Z",
         expectedUpdatedAt: raceSchedule.updatedAt,
-        startsAt: "2026-08-21T03:00:00.000Z",
+        startsAt: "2026-10-21T03:00:00.000Z",
       },
       headers: { origin: server.baseUrl },
     }),
     coachPage.request.post(`/api/lessons/${lessonId}/schedules`, {
       data: {
         capacity: 4,
-        endsAt: "2026-08-21T04:30:00.000Z",
-        startsAt: "2026-08-21T03:30:00.000Z",
+        endsAt: "2026-10-21T04:30:00.000Z",
+        startsAt: "2026-10-21T03:30:00.000Z",
       },
       headers: { origin: server.baseUrl },
     }),
@@ -242,6 +278,7 @@ try {
     crossOriginStatus: crossOrigin.status(),
     draftPublicStatus: 404,
     malformedInputStatus: malformed.status(),
+    selectedAddressStored: true,
     mobileHorizontalOverflow: false,
     replayStatus: replay.status(),
     screenshots: [

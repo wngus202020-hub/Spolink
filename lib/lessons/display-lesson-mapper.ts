@@ -95,6 +95,10 @@ export function mapPublicLesson(
     durationText: `${lesson.duration_minutes}분`,
     id: lesson.id,
     media,
+    location:
+      lesson.latitude === null || lesson.longitude === null
+        ? null
+        : { latitude: lesson.latitude, longitude: lesson.longitude },
     preparationText: lesson.preparation ?? "예약 후 준비물을 확인해요.",
     priceAmount: lesson.price_amount,
     priceText: `${currencyFormatter.format(lesson.price_amount)}원`,

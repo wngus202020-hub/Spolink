@@ -1,12 +1,13 @@
 import { SlidersHorizontal } from "lucide-react"
 import Link from "next/link"
-import { LessonCard } from "@/components/home/lesson-card"
 import { PublicHeader } from "@/components/layout/public-header"
+import { LessonResultsView } from "@/components/lessons/lesson-results-view"
 import { LessonSearchControls } from "@/components/lessons/lesson-search-controls"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { readPageAuthProfile } from "@/lib/auth/page-auth"
 import { includesFilter, readFilters, type SearchParams } from "@/lib/lesson-search"
 import { getLessonsForSearchDisplay } from "@/lib/lessons/display-lessons"
+import { readNaverMapsClientId } from "@/lib/maps/geocoding-env"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -26,6 +27,7 @@ export default async function LessonsPage({ searchParams }: LessonsPageProps) {
       includesFilter(lesson.region, filters.region) && includesFilter(lesson.sport, filters.sport),
   )
   const resultBasis = filters.date ? `${filters.date} 일정` : `${filters.region} 기준`
+  const mapClientId = readNaverMapsClientId()
   return (
     <main className="min-h-[100dvh]">
       <PublicHeader auth={auth} />
@@ -91,15 +93,7 @@ export default async function LessonsPage({ searchParams }: LessonsPageProps) {
                 </div>
               </div>
             ) : filteredLessons.length > 0 ? (
-              <div className="grid gap-8 sm:grid-cols-2">
-                {filteredLessons.map((lesson) => (
-                  <LessonCard
-                    detailHref={`/lessons/${lesson.id}`}
-                    key={lesson.id}
-                    lesson={lesson}
-                  />
-                ))}
-              </div>
+              <LessonResultsView lessons={filteredLessons} mapClientId={mapClientId} />
             ) : (
               <div className="grid min-h-64 place-items-center rounded-[var(--radius-lg)] border border-line bg-subtle p-8 text-center">
                 <div className="grid max-w-[420px] gap-3">
@@ -128,8 +122,7 @@ export default async function LessonsPage({ searchParams }: LessonsPageProps) {
               <span className="text-sm font-bold text-accent">지역 기준</span>
               <strong className="text-2xl font-bold text-primary">{filters.region}</strong>
               <p className="m-0 text-sm leading-[1.6] text-secondary">
-                지도 연동 전까지는 공개 레슨 목록을 우선 제공해요. 네이버 지도 연결 후에는 거리순
-                정렬과 지역 재검색을 제공해요.
+                목록과 지도에서 위치가 등록된 공개 레슨을 함께 확인할 수 있어요.
               </p>
             </div>
 

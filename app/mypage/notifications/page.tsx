@@ -2,9 +2,11 @@ import { Bell } from "lucide-react"
 import { redirect } from "next/navigation"
 import { PublicHeader } from "@/components/layout/public-header"
 import { NotificationList } from "@/components/notifications/notification-list"
+import { PushNotificationToggle } from "@/components/notifications/push-notification-toggle"
 import { readPageAuthProfile } from "@/lib/auth/page-auth"
 import { createSupabaseServerComponentClient } from "@/lib/auth/server-profile"
 import { createNotificationRepository } from "@/lib/notifications/repository"
+import { getWebPushConfigStatus, readWebPushEnv } from "@/lib/supabase/env"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -21,6 +23,7 @@ export default async function NotificationsPage() {
     pageSize: 50,
     unreadOnly: false,
   })
+  const pushConfig = getWebPushConfigStatus()
 
   return (
     <main className="min-h-[100dvh]">
@@ -35,13 +38,10 @@ export default async function NotificationsPage() {
             예약과 활동의 중요한 변화를 확인해요.
           </p>
         </div>
-        {page?.items.length ? (
-          <NotificationList items={page.items} />
-        ) : (
-          <p className="m-0 rounded-[var(--radius-lg)] border border-dashed border-line p-8 text-center text-sm text-secondary">
-            새 알림이 없어요.
-          </p>
-        )}
+        {pushConfig.configured ? (
+          <PushNotificationToggle publicKey={readWebPushEnv().publicKey} />
+        ) : null}
+        <NotificationList initialItems={page?.items ?? []} profileId={auth.profile.id} />
       </section>
     </main>
   )

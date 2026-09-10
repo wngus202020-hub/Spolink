@@ -201,6 +201,15 @@ test("Vercel deploy uses the Next.js framework preset", async () => {
   assert.equal(config.framework, "nextjs")
 })
 
+test("package scripts expose the hosted SMTP browser verifier", async () => {
+  const packageJson = JSON.parse(await readFile("package.json", "utf8"))
+
+  assert.match(
+    packageJson.scripts["staging:verify:smtp"],
+    /tests\/staging-contract\/verify-smtp-auth-flow\.mjs/,
+  )
+})
+
 test("safe evidence writer confines output, redacts values, and sets mode 0600", async () => {
   const output = `.omo/evidence/staging-contract/contract-test-${process.pid}.json`
   try {

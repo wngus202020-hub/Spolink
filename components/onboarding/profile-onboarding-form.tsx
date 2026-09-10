@@ -7,12 +7,11 @@ import { useHydrated } from "@/components/auth/auth-client-routes"
 import { AuthAlert, AuthTextField } from "@/components/auth/auth-fields"
 import { ProfileRegionPicker } from "@/components/profile/profile-region-picker"
 import { Button } from "@/components/ui/button"
+import { normalizeProfilePhone } from "@/lib/profile/phone-contract"
 
 type FieldName = "defaultRegion" | "displayName" | "phone" | "realName"
 type FieldErrors = Partial<Record<FieldName | "form", string>>
 type OnboardingIntent = "coach" | "learner"
-
-const phonePattern = /^01[016789]-[0-9]{3,4}-[0-9]{4}$/
 
 export function ProfileOnboardingForm() {
   const hydrated = useHydrated()
@@ -39,12 +38,13 @@ export function ProfileOnboardingForm() {
     if (submittingRef.current) return
 
     const form = new FormData(event.currentTarget)
+    const phoneInput = String(form.get("phone") ?? "")
     const request = {
       defaultRegion: defaultRegion,
       displayName: String(form.get("displayName") ?? "").trim(),
       locationAgreed: form.get("locationAgreed") === "on",
       marketingAgreed: form.get("marketingAgreed") === "on",
-      phone: String(form.get("phone") ?? "").trim(),
+      phone: normalizeProfilePhone(phoneInput) ?? phoneInput.trim(),
       realName: String(form.get("realName") ?? "").trim(),
     }
     const validationErrors = validateProfile(request)
@@ -147,7 +147,7 @@ export function ProfileOnboardingForm() {
           <AuthTextField
             autoComplete="tel"
             error={errors.phone}
-            helperText="예약 등 서비스 안내에 사용해요. 예: 010-1234-5678"
+            helperText="하이픈 없이 숫자만 입력해도 돼요. 예: 010-1234-5678"
             id="profile-phone"
             inputMode="tel"
             inputRef={refs.phone}
@@ -172,7 +172,9 @@ export function ProfileOnboardingForm() {
           disabled={submitting}
           inputRef={refs.defaultRegion}
           invalid={Boolean(errors.defaultRegion)}
+          maxSuggestions={2}
           onChange={updateRegion}
+          suggestionsOnly
           value={defaultRegion}
         />
         {errors.defaultRegion ? (
@@ -287,7 +289,9 @@ function validateProfile(
   const errors: FieldErrors = {}
   if (value.displayName.length < 2) errors.displayName = "활동 이름은 2자 이상 입력하면 돼요."
   if (value.realName.length < 2) errors.realName = "실명은 2자 이상 입력하면 돼요."
-  if (!phonePattern.test(value.phone)) errors.phone = "올바른 휴대폰 번호를 입력해요."
+  if (normalizeProfilePhone(value.phone) === null) {
+    errors.phone = "올바른 휴대폰 번호를 입력해요."
+  }
   if (value.defaultRegion === null) errors.defaultRegion = "기본 활동 지역을 선택해 주세요."
   return errors
 }

@@ -24,6 +24,11 @@ globalThis[runtimeKey] = runtime
 
 const reactStub = `
 const runtime = globalThis[Symbol.for("spolink.profile-edit-form-runtime")]
+export function forwardRef(render) {
+  return function ForwardRef(props) {
+    return render(props, props.ref ?? null)
+  }
+}
 export function useEffect(effect) { runtime.effects.push(effect) }
 export function useId() {
   const value = \`profile-form-test-\${runtime.idIndex}\`

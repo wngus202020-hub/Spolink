@@ -23,7 +23,8 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 
 ### 탐색, 검색, 미디어
 
-- 지역 선택지는 고정된 공식 complete `전국 법정동_20260630` 스냅샷을 사용한다. 런타임 공공데이터 호출, 지도 연동, 거리순은 범위 밖이다.
+- 지역 선택지는 고정된 공식 complete `전국 법정동_20260630` 스냅샷을 사용한다. 런타임
+  공공데이터 호출과 거리순은 범위 밖이다. 지도 보기는 레슨에 저장된 좌표만 표시한다.
 - 날짜 `YYYY-MM-DD`는 `Asia/Seoul`의 `[00:00, 다음 날 00:00)`로 해석한다. 그 날짜에 시작하는 open·non-full 일정으로 레슨 ID를 먼저 제한한 다음 public lesson limit을 적용한다.
 - Supabase 읽기가 미구성일 때만 동일 matcher로 local demo fallback을 사용한다. 구성된 읽기의 성공 빈 결과는 빈 결과 그대로 보이고 demo 카드로 대체하지 않으며, 읽기 실패는 별도 오류 상태다.
 - 모바일 검색은 compact trigger가 native `<dialog>` bottom sheet를 열고, 데스크톱 검색은 지역·종목·일정의 3개 segmented pill과 원형 검색 버튼을 사용한다. URL 쿼리, 새로고침, 뒤로 가기 후 선택값을 복원한다.
@@ -33,7 +34,11 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 ### 인증 실패 복구와 보류 항목
 
 - 비밀번호 재설정은 network, abort, non-2xx 실패 뒤 이메일 입력값을 유지하고 submit을 복구해 재시도할 수 있게 하며 generic alert에 focus한다. 회원가입 provider-error는 React 오류 상태 반영 뒤 첫 invalid field에 focus한다.
-- 현재 확인된 서버 상태는 local-only Supabase/Auth/RLS, 지도자 인증 신청·private `coach-certificates` Storage·관리자 심사, 레슨/예약 lifecycle, 찜·리뷰·신고·차단·앱 내 알림, 내부 환불 reconciliation·정산 상태와 그 계약/E2E다. hosted Supabase, actual Toss refund execution, payout network, maps, chat, push는 deferred다.
+- 현재 확인된 서버 상태는 로컬 Supabase/Auth/RLS 전체 계약·E2E와 별도 Hosted Supabase/Vercel
+  staging이다. staging에는 repository migration 34개, Auth Site/redirect 설정, 앱 runtime env가
+  적용됐고 guest/readiness, signup·cross-user RLS smoke 및 Mailtrap custom SMTP 기반 이메일
+  확인·복구 E2E가 통과했다. CI/CD, production deployment, actual Toss refund execution,
+  payout network, maps, chat, push는 deferred다.
 
 ## UX 원칙
 
@@ -362,6 +367,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - `/onboarding/profile`은 프로필 필드의 소유 화면이며, 프로필이 없는 인증 사용자는 예약/결제 진입 전에 반드시 이 화면을 완료한다.
 - 이 화면은 프로필이 없는 신규 사용자의 생성 전용 화면이다. 기존 프로필 수정은 별도 마이페이지 프로필 수정 화면에서 `PATCH /api/profiles/me`로 처리한다.
 - 기본 활동 지역은 `ProfileRegionPicker`에서 검색 후 canonical 지역을 명시적으로 선택한다. 입력한 free text 자체를 저장하거나 POST하지 않는다.
+- 연락처는 하이픈 포함 또는 숫자만 입력할 수 있으며, 저장 요청 전에 canonical 형식으로 정규화한다.
 - 선택 전에는 `POST /api/profiles`를 보내지 않으며, 필수 지역 오류와 지역 선택 control의 focus로 다시 선택하게 한다.
 - 학습자/지도자 목적 선택은 다음 이동 경로를 정하는 UI 상태일 뿐이며 `role`, `status`, 지도자 승인 상태 같은 권한 값으로 저장하지 않는다.
 - 관심 종목 영구 저장은 MVP 범위에서 연기하며 이 화면의 필수 저장 계약에 포함하지 않는다.
@@ -478,11 +484,13 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - 가격 범위
 - 날짜 필터
 - 레슨 리스트
-- 지도 영역 또는 지도 보기 진입
+- 목록/지도 보기 전환
+- 좌표가 등록된 레슨 마커와 위치 결과 목록
 
 주요 액션:
 
 - 필터 적용
+- 목록/지도 전환과 마커·위치 결과 선택
 - 레슨 상세 이동
 - 찜
 
@@ -498,6 +506,16 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - 검색 결과 없음
 - 로딩
 - 오류
+- 지도 로딩/제공자 오류
+- 좌표가 있는 레슨 없음
+
+지도 보기 규칙:
+
+- 기본은 목록 보기이며 현재 필터 결과를 그대로 유지한 채 지도 보기로 전환한다.
+- NAVER Maps Dynamic Map은 서버가 전달한 application client ID로 비동기 로드한다.
+- 지도에는 유효한 위·경도 쌍이 있는 공개 레슨만 표시하며, 목록 보기에는 모든 검색 결과를 유지한다.
+- 마커와 오른쪽/하단 위치 결과는 동일한 선택 상태를 사용하고 선택 레슨 상세로 이동할 수 있다.
+- 현재 위치, 거리순 정렬, 지도 경계 재검색은 후속 범위다.
 
 빈 화면:
 
@@ -776,6 +794,8 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - `PATCH /api/profiles/me`
 - 브라우저 mutation은 변경된 항목만 보낸다. 허용 key는 `displayName`, `realName`, `phone`, `defaultRegion`, `locationAgreed`, `marketingAgreed` 6개뿐이다.
 - 초기값은 Server Component가 전달하며 중복 프로필 조회를 만들지 않는다.
+- 프로필 사진은 `profile-avatars` Storage의 소유자 단일 경로에 업로드한 뒤 별도 `avatarPath` PATCH로 반영한다. 삭제는 프로필 경로를 먼저 지운 뒤 Storage 객체를 제거한다.
+- 사진 관리 UI는 JPEG/PNG/WebP 5 MiB 제한, 업로드·삭제 상태, 오류 복구, 삭제 확인 dialog와 활동 이름 문자 fallback을 제공한다.
 
 검증된 실행 표면:
 
@@ -785,8 +805,23 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 
 제외/미구현:
 
-- 아바타/이미지 업로드, 계정 삭제, PASS 본인 인증, Hosted Supabase/provider integration, null clearing은 이 화면에서 제외/미구현이다.
+- PASS 본인 인증과 필수 프로필 필드 null clearing은 이 화면에서 제외/미구현이다.
+- Hosted staging은 앱 runtime에 연결되어 있지만 이 프로필 편집 화면의 hosted browser E2E와
+  provider-specific profile operation은 아직 검증 범위가 아니다.
 - API가 nullable 필드를 지원하더라도 현재 UI는 필수 텍스트와 canonical 지역을 비워서 저장하는 흐름을 제공하지 않는다.
+
+## 13-1. 계정 설정
+
+구현 경로: `/mypage/settings`
+
+- 인증 이메일, 계정 상태와 역할을 읽기 전용으로 표시한다.
+- 비밀번호 재설정과 현재 브라우저 로그아웃으로 이동할 수 있다.
+- 회원 탈퇴는 native dialog에서 `탈퇴하기` 문구를 정확히 입력해야 활성화한다.
+- 탈퇴 성공 시 세션을 제거하고 홈으로 이동한다. 실패하면 dialog 입력을 유지하고 오류에 초점을
+  이동해 재시도할 수 있다.
+- 미인증·미설정은 `/auth/login?next=/mypage/settings`, 프로필 없음은 `/onboarding/profile`,
+  정지·탈퇴 계정은 공통 제한 경계로 이동한다.
+- 연결 API: `DELETE /api/account`, `POST /auth/logout`, 비밀번호 recovery flow.
 
 ## 14. 내 예약 목록
 
@@ -1057,7 +1092,8 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - 요약
 - 상세 설명
 - 지역
-- 장소
+- 장소명
+- 주소 검색 결과와 선택한 주소
 - 가격
 - 수업 시간
 - 정원
@@ -1070,6 +1106,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - 임시 저장
 - 검토 요청
 - 수정 저장
+- 도로명/지번 주소 검색 및 결과 선택
 - 이미지 추가/다시 시도
 - 표지 지정과 순서 변경
 - 이미지 삭제 확인
@@ -1079,10 +1116,19 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 - `GET /api/sports`
 - `POST /api/lessons`
 - `PATCH /api/lessons/{lessonId}`
+- `POST /api/maps/geocode`
 - `POST /api/lessons/{lessonId}/images/upload-intents`
 - `POST /api/lessons/{lessonId}/images`
 - `PATCH /api/lessons/{lessonId}/images/order`
 - `DELETE /api/lessons/{lessonId}/images/{imageId}`
+
+주소 상태와 복구:
+
+- 주소 검색은 승인된 지도자 세션에서만 사용하며 결과를 선택하면 정규화된 주소와 위·경도를
+  초안에 함께 저장한다.
+- 검색어 입력과 저장 대상 주소를 분리하고, 결과 선택 전에는 좌표를 전송하지 않는다.
+- 기존 좌표 없는 레슨의 주소는 유지할 수 있으며 선택한 주소를 지우면 주소와 좌표를 함께 비운다.
+- 미설정·제공자 오류·검색 결과 없음은 폼 안에서 표시하고 다른 초안 필드는 유지한다.
 
 이미지 상태와 복구:
 
@@ -1245,8 +1291,9 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
   공통 shell로 재구성하지 않는다.
 - 2A: 정확히 다섯 개 count-and-link 타일만 표시하며 row preview를 추가하지 않는다.
 - 3A: failing-first TDD plus managed responsive Playwright verification at 390/768/1280, local-only.
-- 이 화면은 local-only Supabase 범위다. Hosted Supabase, Realtime delivery, payout 및 provider
-  기능은 deferred 상태로 유지한다.
+- 이 관리자 화면의 count snapshot과 browser evidence는 local-only Supabase 검증이다.
+  Hosted Supabase staging에는 같은 route와 schema가 배포되어 있지만 관리자 desktop/mobile E2E는
+  deferred다. Realtime delivery, payout 및 provider 기능도 deferred다.
 
 권한:
 
@@ -1372,7 +1419,7 @@ SPOLINK MVP의 화면 구조, 사용자 흐름, 화면별 기능, 상태, 빈 �
 | 예약 상세/지도자 예약 | `confirmed`에서 `completed`, `no_show_user`, `no_show_coach`를 서버 시각과 KST 일정으로 판정하며 완료/노쇼 시각·행위자·금액은 입력받지 않는다. |
 | 찜/리뷰 | 활성 레슨 찜 추가·삭제, 완료 예약 1건당 리뷰 1건, 관리자 리뷰 숨김을 제공한다. |
 | 신고/차단 | `message` 대상은 제외하고 신고·차단·관리자 처리 및 앱 내 알림 결과를 제공한다. |
-| 알림 | 소유자 목록/읽음 처리와 완료·노쇼·리뷰 요청·신고·환불·정산·지도자 상태 이벤트를 제공한다. push delivery는 제공하지 않는다. |
+| 알림 | 소유자 목록/읽음 처리, 인증된 Realtime 갱신, 사용자 동의 Web Push 토글과 private 구독을 제공한다. 로컬 E2E는 replication-ready 이후 새 알림과 outbox 생성을 확인하며 hosted migration·worker scheduler·외부 Push Service 발송 검증은 후속이다. |
 | 환불/정산 | 내부 환불은 `requested/approved/completed/failed` reconciliation 계약만 제공하고, 정산은 `pending/hold/approved`까지만 제공한다. Toss refund execution과 payout은 제공하지 않는다. |
 
 각 상태의 HTTP payload, 허용 action, DB 테이블/RPC, 오류와 재시도 규칙은

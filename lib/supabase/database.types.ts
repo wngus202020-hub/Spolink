@@ -62,6 +62,8 @@ type ReservationStatusAction =
 type ReportStatusAction = "reject" | "resolve" | "start_review"
 type SettlementStatusAction = "approve" | "hold"
 type RefundResultAction = "complete" | "fail"
+type NotificationPushDeliveryStatus = "dead" | "delivered" | "pending" | "processing" | "retry"
+type NotificationPushResultAction = "delivered" | "expired" | "failed" | "retry"
 type ReportTargetType = "coach" | "lesson" | "reservation" | "review" | "user"
 type NotificationType =
   | "coach_certification.reviewed"
@@ -373,6 +375,41 @@ type NotificationsRow = Readonly<{
 }>
 type NotificationsInsert = InsertShape<NotificationsRow, "title" | "type" | "user_id">
 
+type PushSubscriptionsRow = BaseTimestamps &
+  Readonly<{
+    auth: string
+    disabled_at: Timestamp | null
+    endpoint: string
+    expiration_time: Timestamp | null
+    id: Uuid
+    p256dh: string
+    user_id: Uuid
+  }>
+type PushSubscriptionsInsert = InsertShape<
+  PushSubscriptionsRow,
+  "auth" | "endpoint" | "p256dh" | "user_id"
+>
+
+type NotificationPushDeliveriesRow = BaseTimestamps &
+  Readonly<{
+    attempt_count: number
+    claim_expires_at: Timestamp | null
+    claim_token: Uuid | null
+    claimed_at: Timestamp | null
+    delivered_at: Timestamp | null
+    id: Uuid
+    last_error_code: string | null
+    next_attempt_at: Timestamp
+    notification_id: Uuid
+    result_action: NotificationPushResultAction | null
+    status: NotificationPushDeliveryStatus
+    subscription_id: Uuid
+  }>
+type NotificationPushDeliveriesInsert = InsertShape<
+  NotificationPushDeliveriesRow,
+  "notification_id" | "subscription_id"
+>
+
 type AuditLogsRow = Readonly<{
   action: string
   actor_id: Uuid | null
@@ -408,6 +445,8 @@ export type Database = Readonly<{
       lesson_status_action: LessonStatusAction
       lesson_status: LessonStatus
       notification_type: NotificationType
+      notification_push_delivery_status: NotificationPushDeliveryStatus
+      notification_push_result_action: NotificationPushResultAction
       payment_status: PaymentStatus
       refund_result_action: RefundResultAction
       refund_status: RefundStatus
@@ -423,6 +462,14 @@ export type Database = Readonly<{
       user_status: UserStatus
     }
     Functions: {
+      withdraw_current_account: Rpc<
+        NoArgs,
+        readonly Readonly<{
+          account_id: Uuid
+          deleted_at: Timestamp
+          idempotent: boolean
+        }>[]
+      >
       upsert_coach_application_draft: Rpc<
         {
           checked_bank_account_last4: string
@@ -720,6 +767,45 @@ export type Database = Readonly<{
         },
         Readonly<{ idempotent: boolean; notification_id: Uuid }>[]
       >
+      disable_push_subscription: Rpc<{ checked_endpoint: string }, boolean>
+      upsert_push_subscription: Rpc<
+        {
+          checked_auth: string
+          checked_endpoint: string
+          checked_expiration_time?: Timestamp | null
+          checked_p256dh: string
+        },
+        boolean
+      >
+      claim_notification_push_deliveries: Rpc<
+        { checked_limit?: number },
+        readonly Readonly<{
+          attempt: number
+          auth: string
+          body: string | null
+          claim_token: Uuid
+          data: Json | null
+          delivery_id: Uuid
+          endpoint: string
+          notification_id: Uuid
+          notification_type: NotificationType
+          p256dh: string
+          title: string
+        }>[]
+      >
+      record_notification_push_delivery_result: Rpc<
+        {
+          checked_action: NotificationPushResultAction
+          checked_claim_token: Uuid
+          checked_delivery_id: Uuid
+          checked_error_code?: string | null
+        },
+        readonly Readonly<{
+          delivery_id: Uuid
+          idempotent: boolean
+          status: NotificationPushDeliveryStatus
+        }>[]
+      >
       owns_coach_profile: Rpc<{ coach_profile_id: Uuid }, boolean>
       owns_lesson: Rpc<{ lesson_id: Uuid }, boolean>
       reservation_no_show_available_at: Rpc<{ checked_starts_at: Timestamp }, Timestamp>
@@ -764,8 +850,13 @@ export type Database = Readonly<{
       lesson_schedules: Table<LessonSchedulesRow, LessonSchedulesInsert>
       lessons: Table<LessonsRow, LessonsInsert>
       notifications: Table<NotificationsRow, NotificationsInsert>
+      notification_push_deliveries: Table<
+        NotificationPushDeliveriesRow,
+        NotificationPushDeliveriesInsert
+      >
       payments: Table<PaymentsRow, PaymentsInsert>
       profiles: Table<ProfilesRow, ProfilesInsert>
+      push_subscriptions: Table<PushSubscriptionsRow, PushSubscriptionsInsert>
       refunds: Table<RefundsRow, RefundsInsert>
       reports: Table<ReportsRow, ReportsInsert>
       reservations: Table<ReservationsRow, ReservationsInsert>

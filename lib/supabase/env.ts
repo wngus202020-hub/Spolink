@@ -17,6 +17,21 @@ const edgeRuntimeEnvSchema = z.object({
   SPOLINK_EDGE_SECRET: z.string().min(16),
 })
 
+const vapidKeySchema = z
+  .string()
+  .min(32)
+  .max(120)
+  .regex(/^[A-Za-z0-9_-]+$/u)
+const webPushEnvSchema = z.object({
+  NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY: vapidKeySchema,
+  WEB_PUSH_VAPID_PRIVATE_KEY: vapidKeySchema,
+  WEB_PUSH_VAPID_SUBJECT: z.string().refine((value) => {
+    if (value.startsWith("mailto:")) return value.length > "mailto:".length
+    const parsed = z.string().url().safeParse(value)
+    return parsed.success && parsed.data.startsWith("https://")
+  }),
+})
+
 type SupabasePublicEnvSource = Readonly<{
   NEXT_PUBLIC_SUPABASE_ANON_KEY: string | undefined
   NEXT_PUBLIC_SUPABASE_URL: string | undefined
@@ -35,6 +50,12 @@ type EdgeRuntimeEnvSource = Readonly<{
   SPOLINK_EDGE_SECRET: string | undefined
 }>
 
+type WebPushEnvSource = Readonly<{
+  NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY: string | undefined
+  WEB_PUSH_VAPID_PRIVATE_KEY: string | undefined
+  WEB_PUSH_VAPID_SUBJECT: string | undefined
+}>
+
 export type SupabasePublicEnv = Readonly<{
   supabaseAnonKey: string
   supabaseUrl: string
@@ -51,6 +72,12 @@ export type TossPaymentsEnv = Readonly<{
 
 export type EdgeRuntimeEnv = Readonly<{
   edgeSecret: string
+}>
+
+export type WebPushEnv = Readonly<{
+  privateKey: string
+  publicKey: string
+  subject: string
 }>
 
 export type SupabaseConfigStatus = Readonly<
@@ -114,6 +141,14 @@ export function getTossPaymentsEnvSource(): TossPaymentsEnvSource {
 export function getEdgeRuntimeEnvSource(): EdgeRuntimeEnvSource {
   return {
     SPOLINK_EDGE_SECRET: process.env["SPOLINK_EDGE_SECRET"],
+  }
+}
+
+export function getWebPushEnvSource(): WebPushEnvSource {
+  return {
+    NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY: process.env["NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY"],
+    WEB_PUSH_VAPID_PRIVATE_KEY: process.env["WEB_PUSH_VAPID_PRIVATE_KEY"],
+    WEB_PUSH_VAPID_SUBJECT: process.env["WEB_PUSH_VAPID_SUBJECT"],
   }
 }
 
@@ -219,6 +254,26 @@ export function getEdgeRuntimeConfigStatus(
   source: EdgeRuntimeEnvSource = getEdgeRuntimeEnvSource(),
 ): EdgeRuntimeConfigStatus {
   return readConfigStatus(edgeRuntimeEnvSchema, source)
+}
+
+export function readWebPushEnv(source: WebPushEnvSource = getWebPushEnvSource()): WebPushEnv {
+  const parsedEnv = webPushEnvSchema.safeParse(source)
+
+  if (!parsedEnv.success) {
+    throw new SupabaseConfigError(formatIssues(parsedEnv.error.issues))
+  }
+
+  return {
+    privateKey: parsedEnv.data.WEB_PUSH_VAPID_PRIVATE_KEY,
+    publicKey: parsedEnv.data.NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY,
+    subject: parsedEnv.data.WEB_PUSH_VAPID_SUBJECT,
+  }
+}
+
+export function getWebPushConfigStatus(
+  source: WebPushEnvSource = getWebPushEnvSource(),
+): SupabaseConfigStatus {
+  return readConfigStatus(webPushEnvSchema, source)
 }
 
 function readConfigStatus<EnvSource>(

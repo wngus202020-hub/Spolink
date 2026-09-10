@@ -15,4 +15,18 @@ corepack pnpm staging:contract
 ```
 
 ## SCOPE
-Hosted Supabase, Vercel, Toss, maps, chat, push, and production deployment remain deferred until separately planned and documented.
+A separate Hosted Supabase/Vercel staging deployment and Mailtrap-backed custom SMTP now exist.
+Confirmation/recovery browser E2E is provider-verified; CI/CD, production, Toss refund execution,
+payout, and chat remain deferred. Local address geocoding and coordinate-backed lesson map/list
+discovery are implemented, but this suite does not prove live NAVER credentials, provider tiles,
+current-location distance sorting, or bounds search. The root map browser QA uses a NAVER SDK stub
+and is likewise not live-provider proof. Realtime/Web Push exists locally, but hosted migrations,
+worker scheduling, and external Push Service delivery proof remain pending. Offline contract success
+alone is not provider proof and must not be described as a production release.
+
+## PROVIDER BOUNDARY
+- Do not add or print NAVER client credentials while running these local checks.
+- Do not infer live map rendering from a local geocoding result, a stubbed browser run, or a passing
+  staging contract.
+- Hosted Push remains pending until the deployed migration, worker scheduling, and real external
+  Push Service delivery are separately verified with redacted provider evidence.

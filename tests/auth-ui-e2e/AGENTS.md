@@ -2,9 +2,9 @@
 
 ## OVERVIEW
 
-This directory owns serial Playwright flows for auth, onboarding, profile editing, booking, payment
-preparation, reservations/completion, favorites, coach guidance, coach certification, and visual
-direction checks.
+This directory owns serial Playwright flows for auth, onboarding, profile/avatar/account settings,
+booking, payment preparation, reservations/completion, favorites, notifications, coach guidance,
+coach certification, and visual direction checks.
 
 ## LIFECYCLE
 
@@ -34,7 +34,11 @@ direction checks.
 - `test:e2e:auth`: `run.mjs`, booking confirmation, and coach certification, in that order.
 - `test:e2e:payment`: payment preparation only.
 - `test:e2e:profile-edit`: the focused `/mypage/profile` desktop/tablet/mobile runner.
+- `test:e2e:profile-avatar`: profile image upload and removal, including the no-image state before and after removal.
+- `test:e2e:account-settings`: authenticated withdrawal confirmation and cleanup states.
+- `test:e2e:notifications`: in-app Realtime catch-up and Web Push opt-in states.
 - `test:e2e:reservations`: learner list/detail/completion/calendar only.
+- `test:e2e:coach-dashboard`: approved-coach operational dashboard states.
 - My Page review management remains a direct focused runner with no package aggregate registration.
 - Do not register focused payment, profile, review-management, or reservation runners inside `run.mjs`.
 
@@ -65,7 +69,11 @@ direction checks.
 corepack pnpm test:e2e:auth
 corepack pnpm test:e2e:payment
 corepack pnpm test:e2e:profile-edit
+corepack pnpm test:e2e:profile-avatar
+corepack pnpm test:e2e:account-settings
+corepack pnpm test:e2e:notifications
 corepack pnpm test:e2e:reservations
+corepack pnpm test:e2e:coach-dashboard
 corepack pnpm test:e2e:direction-alignment
 node tests/auth-ui-e2e/run-mypage-reviews.mjs .omo/evidence/mypage-reviews-management/task-8/focused-summary.json
 ```

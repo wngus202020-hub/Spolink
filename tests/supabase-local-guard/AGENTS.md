@@ -39,7 +39,14 @@ closed without mutating ambient resources.
 ## VERIFY
 
 ```bash
+# Root aggregate: imports its explicitly listed core cases only.
 node --test tests/supabase-local-guard.test.mjs
+# Full child-directory suite: expands and executes every current `*.test.mjs` file in this directory.
+node --test tests/supabase-local-guard/*.test.mjs
 corepack pnpm supabase:doctor
 corepack pnpm supabase:assert-stopped
 ```
+
+The root aggregate currently imports nine selected child files; it does not cover every file under
+`tests/supabase-local-guard/`. Use the full child-directory command after changes to any child test
+that the root entry point does not import, and keep its filename glob limited to this directory.

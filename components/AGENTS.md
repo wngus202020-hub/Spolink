@@ -9,7 +9,7 @@ server data; `lib/` owns domain clients and workflows.
 
 | Area | Location | Boundary |
 |------|----------|----------|
-| Auth and profile | `auth/`, `onboarding/`, `profile/` | Shared fields, profile editing, error focus, safe redirects |
+| Auth, account, profile | `auth/`, `account/`, `onboarding/`, `profile/` | Shared fields, account withdrawal, profile editing, error focus, safe redirects |
 | Discovery and home | `home/`, `lessons/` | Cards, explicit media, query controls, booking handoff |
 | Coach authoring | `coach/`, `lessons/` | Application, lesson drafts, schedules; clients in `lib/lessons/` |
 | Admin operations | `admin/` | Certification, lesson, report, and reservation actions; route policy in `app/admin/`, `lib/*/` |
@@ -29,7 +29,10 @@ server data; `lib/` owns domain clients and workflows.
 - After React commits an async error, focus its alert; busy forms block duplicate submission.
 - `ProfileEditForm` sends changed-only profile PATCH data through `lib/profile/edit-client.ts`;
   `ProfileRegionPicker` accepts only canonical `lessonRegions` values and never persists free text.
+- `ProfileAvatarManager` validates JPEG/PNG/WebP up to 5 MiB, keeps one stable owner object, and
+  confirms destructive removal with a native dialog before restoring trigger focus.
 - Dialogs use native `<dialog>`, initial focus, Escape dismissal, and trigger-focus restoration.
+- Account withdrawal requires exact confirmation text, blocks duplicate submission, and preserves dialog input after failure.
 - Preserve keyboard operation, dark mode, reduced motion, and 390/768/1280 responsive states.
 - Certification UI shows upload validation, submitted status, and returned admin decisions only.
 

@@ -123,6 +123,49 @@ test("callback recovery success issues a fresh recovery grant distinct from inte
   assert.match(setCookieHeader(response), /spolink_recovery=/)
 })
 
+test("callback recovery accepts the percent-encoded next value emitted by hosted auth", async () => {
+  const { createCallbackHandler } = await import("../../lib/auth/callback-route.ts")
+  const { createRecoveryIntentToken } = await import("../../lib/auth/flow-token.ts")
+  const secret = testSecret()
+  const intent = createRecoveryIntentToken(secret)
+  const harness = makeSupabaseHarness({ secret })
+
+  const response = await createCallbackHandler(harness.dependencies)(
+    routeRequest("/auth/callback?next=%2Fauth%2Fupdate-password&code=ok", {
+      cookie: `sb-abcdefghijklmnop-auth-token-code-verifier=verifier; spolink_recovery_intent=${intent.token}`,
+      method: "GET",
+      origin: null,
+    }),
+  )
+
+  assert.equal(response.status, 303)
+  assert.equal(response.headers.get("location"), "/auth/update-password")
+  assert.match(setCookieHeader(response), /spolink_recovery=/)
+})
+
+test("callback recovery rejects duplicate next values before issuing a recovery grant", async () => {
+  const { createCallbackHandler } = await import("../../lib/auth/callback-route.ts")
+  const { createRecoveryIntentToken } = await import("../../lib/auth/flow-token.ts")
+  const secret = testSecret()
+  const intent = createRecoveryIntentToken(secret)
+  const harness = makeSupabaseHarness({ secret })
+
+  const response = await createCallbackHandler(harness.dependencies)(
+    routeRequest(
+      "/auth/callback?next=%2Fauth%2Fupdate-password&next=https%3A%2F%2Fevil.test&code=ok",
+      {
+        cookie: `sb-abcdefghijklmnop-auth-token-code-verifier=verifier; spolink_recovery_intent=${intent.token}`,
+        method: "GET",
+        origin: null,
+      },
+    ),
+  )
+
+  assert.equal(response.status, 303)
+  assert.equal(response.headers.get("location"), "/lessons")
+  assert.doesNotMatch(setCookieHeader(response), /spolink_recovery=[^;]/)
+})
+
 test("logout module surface is POST-only without an executable GET handler", async () => {
   const routeModule = await import("../../app/auth/logout/route.ts")
 

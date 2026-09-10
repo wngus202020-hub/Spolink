@@ -160,7 +160,6 @@ function readSecretOrNull(deps: CallbackDependencies): Buffer | null {
 }
 
 function hasExactRecoveryNext(request: NextRequest): boolean {
-  return request.nextUrl.search
-    .split("&")
-    .some((part) => part === "?next=/auth/update-password" || part === "next=/auth/update-password")
+  const nextValues = request.nextUrl.searchParams.getAll("next")
+  return nextValues.length === 1 && nextValues[0] === "/auth/update-password"
 }

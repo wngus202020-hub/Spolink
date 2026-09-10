@@ -31,6 +31,13 @@
   state divergence observable for reconciliation.
 - Coach certification and lesson-image transitions pair status changes with private Storage/RLS
   ownership and exactly-once side effects.
+- Owner review history is visible only to the review owner and admins; never relax review RLS for discovery.
+- Realtime notifications stay owner-scoped; Web Push subscriptions/outbox delivery are RLS-protected and
+  service-role-only workers lease, complete, or retry delivery rows.
+- Geocoded lesson locations store latitude/longitude as a validated pair, never one coordinate alone.
+- Profile-avatar objects are publicly readable but only their authenticated owner may mutate the bound path.
+- Account withdrawal derives the actor from `auth.uid()`, removes personal settings, and soft-deletes while
+  retaining financial and policy-required history.
 - Actual Toss refund execution and payout remain outside these local migrations.
 
 ## VERIFY

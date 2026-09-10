@@ -1,4 +1,6 @@
+import { SelectInput, TextareaInput, TextInput } from "@/components/ui/form-controls"
 import type { LessonDraftInput } from "@/lib/lessons/authoring-contract"
+import { LessonAddressSearch } from "./lesson-address-search"
 
 export type CoachLessonSportOption = Readonly<{ id: string; name: string }>
 export type CoachLessonFieldValues = Readonly<{
@@ -7,6 +9,8 @@ export type CoachLessonFieldValues = Readonly<{
   capacity: number
   description: string
   durationMinutes: number
+  latitude: number | null
+  longitude: number | null
   placeName: string | null
   preparation: string | null
   priceAmount: number
@@ -15,9 +19,6 @@ export type CoachLessonFieldValues = Readonly<{
   summary: string | null
   title: string
 }>
-
-export const lessonInputClassName =
-  "min-h-11 rounded-[var(--radius-md)] border border-line bg-canvas px-3 py-2 text-primary disabled:bg-inset disabled:text-tertiary"
 
 export function LessonField({
   disabled = false,
@@ -35,12 +36,12 @@ export function LessonField({
   value: number | string | null | undefined
 }>) {
   return (
-    <label className="grid gap-2 text-sm font-bold text-primary">
+    <label className="grid gap-2 text-sm font-bold text-primary" htmlFor={name}>
       {label}
-      <input
-        className={lessonInputClassName}
+      <TextInput
         defaultValue={value ?? ""}
         disabled={disabled}
+        id={name}
         name={name}
         required={required}
         type={type}
@@ -68,12 +69,12 @@ export function CoachLessonFormFields({
           required
           value={initial?.title}
         />
-        <label className="grid gap-2 text-sm font-bold text-primary">
+        <label className="grid gap-2 text-sm font-bold text-primary" htmlFor="sportId">
           종목
-          <select
-            className={lessonInputClassName}
+          <SelectInput
             defaultValue={initial?.sportId ?? ""}
             disabled={disabled}
+            id="sportId"
             name="sportId"
             required
           >
@@ -85,16 +86,16 @@ export function CoachLessonFormFields({
                 {sport.name}
               </option>
             ))}
-          </select>
+          </SelectInput>
         </label>
       </div>
       <LessonField disabled={disabled} label="한 줄 요약" name="summary" value={initial?.summary} />
-      <label className="grid gap-2 text-sm font-bold text-primary">
+      <label className="grid gap-2 text-sm font-bold text-primary" htmlFor="description">
         상세 설명
-        <textarea
-          className={`${lessonInputClassName} min-h-36 resize-y`}
+        <TextareaInput
           defaultValue={initial?.description}
           disabled={disabled}
+          id="description"
           name="description"
           required
         />
@@ -113,11 +114,17 @@ export function CoachLessonFormFields({
           name="placeName"
           value={initial?.placeName}
         />
-        <LessonField
+        <LessonAddressSearch
           disabled={disabled}
-          label="상세 주소"
-          name="address"
-          value={initial?.address}
+          initial={
+            initial?.address
+              ? {
+                  address: initial.address,
+                  latitude: initial.latitude,
+                  longitude: initial.longitude,
+                }
+              : null
+          }
         />
         <LessonField
           disabled={disabled}
@@ -167,6 +174,8 @@ export function readLessonDraftForm(form: FormData): LessonDraftInput {
     capacity: number(form, "capacity"),
     description: text(form, "description"),
     durationMinutes: number(form, "durationMinutes"),
+    latitude: optionalNumber(form, "latitude"),
+    longitude: optionalNumber(form, "longitude"),
     placeName: optional(form, "placeName"),
     preparation: optional(form, "preparation"),
     priceAmount: number(form, "priceAmount"),
@@ -189,4 +198,9 @@ function optional(form: FormData, name: string) {
 
 function number(form: FormData, name: string) {
   return Number(text(form, name))
+}
+
+function optionalNumber(form: FormData, name: string) {
+  const value = text(form, name).trim()
+  return value.length > 0 ? Number(value) : null
 }

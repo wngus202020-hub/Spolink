@@ -1,4 +1,5 @@
 import type { ChangeEvent } from "react"
+import { SelectInput, TextareaInput, TextInput } from "@/components/ui/form-controls"
 
 export type CoachFormState = Readonly<{
   bankAccountLast4: string
@@ -22,8 +23,6 @@ export function CoachApplicationFields({
   sports: readonly Readonly<{ id: string; name: string }>[]
   value: CoachFormState
 }>) {
-  const inputClass =
-    "min-h-11 w-full rounded-[var(--radius-sm)] border border-line bg-canvas px-4 py-3 text-sm text-primary outline-none focus:border-primary disabled:bg-inset disabled:text-tertiary"
   return (
     <div className="grid gap-6">
       <section
@@ -38,8 +37,7 @@ export function CoachApplicationFields({
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="한 줄 소개" name="headline">
-            <input
-              className={inputClass}
+            <TextInput
               disabled={!editable}
               id="headline"
               maxLength={120}
@@ -51,8 +49,7 @@ export function CoachApplicationFields({
             />
           </Field>
           <Field label="대표 종목" name="primarySportId">
-            <select
-              className={inputClass}
+            <SelectInput
               disabled={!editable}
               id="primarySportId"
               name="primarySportId"
@@ -66,11 +63,10 @@ export function CoachApplicationFields({
                   {sport.name}
                 </option>
               ))}
-            </select>
+            </SelectInput>
           </Field>
           <Field label="활동 지역" name="serviceRegion">
-            <input
-              className={inputClass}
+            <TextInput
               disabled={!editable}
               id="serviceRegion"
               maxLength={100}
@@ -82,8 +78,7 @@ export function CoachApplicationFields({
             />
           </Field>
           <Field label="경력 연수" name="careerYears">
-            <input
-              className={inputClass}
+            <TextInput
               disabled={!editable}
               id="careerYears"
               max={100}
@@ -97,8 +92,7 @@ export function CoachApplicationFields({
             />
           </Field>
           <Field className="sm:col-span-2" label="소개글" name="bio">
-            <textarea
-              className={`${inputClass} min-h-32 resize-y`}
+            <TextareaInput
               disabled={!editable}
               id="bio"
               maxLength={5000}
@@ -122,8 +116,7 @@ export function CoachApplicationFields({
         </div>
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="은행명" name="bankName">
-            <input
-              className={inputClass}
+            <TextInput
               disabled={!editable}
               id="bankName"
               maxLength={100}
@@ -135,8 +128,7 @@ export function CoachApplicationFields({
             />
           </Field>
           <Field label="계좌 끝 4자리" name="bankAccountLast4">
-            <input
-              className={inputClass}
+            <TextInput
               disabled={!editable}
               id="bankAccountLast4"
               inputMode="numeric"
@@ -150,8 +142,7 @@ export function CoachApplicationFields({
             />
           </Field>
           <Field label="예금주" name="payoutHolderName">
-            <input
-              className={inputClass}
+            <TextInput
               disabled={!editable}
               id="payoutHolderName"
               maxLength={100}

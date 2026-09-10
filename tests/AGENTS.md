@@ -9,16 +9,18 @@ Supabase E2E, lifecycle safety tests, and staging/evidence security gates.
 
 | Area | Framework / purpose |
 |------|---------------------|
-| `*.test.mjs` | `node:test` API, workflow, source, read-model, and SQL contracts |
+| `*.test.mjs` | `node:test` API, workflow, source, read-model, and migration contracts |
 | `profile-api/` | Validation, route precedence, workflow, repository boundaries |
 | `auth-ui-e2e/` | Playwright auth and browser commerce flows; see child guide |
 | `lesson-images/` | Image route, Storage, idempotency, browser, and evidence suites; see child guide |
 | `mypage-profile-edit-docs-contract.test.mjs` | Source/docs contract for the profile-edit screen and Todo7 evidence claims |
-| `supabase-e2e/` | Live Auth/RLS/cancellation/concurrency/evidence; see child guide |
+| `supabase-e2e/` | Guarded local live Auth, RLS/RPC, Storage, reservation/payment/cancellation races, HTTP/read-state, and evidence; see child guide |
 | `high-priority-missing-services/` | High-priority contract runner and Task 3 evidence package; see child guide |
 | `supabase-local-guard/` | Process, Docker, receipt, lock, and cleanup safety; see child guide |
 | `staging-contract/` | Provider checklist, forbidden commands, redaction contracts |
+| `lesson-map-browser-qa.mjs` | Browser map interaction QA with a NAVER Maps SDK stub; not live provider credential or tile proof |
 | `fixtures/regions/` | Immutable official region snapshot and checksum |
+| `../supabase/tests/` | PostgreSQL/pgTAP permission and transactional behavior suites |
 
 ## CONVENTIONS
 
@@ -47,7 +49,11 @@ corepack pnpm test:coach-certification
 corepack pnpm test:e2e:auth
 corepack pnpm test:e2e:payment
 corepack pnpm test:e2e:profile-edit
+corepack pnpm test:e2e:profile-avatar
+corepack pnpm test:e2e:account-settings
+corepack pnpm test:e2e:notifications
 corepack pnpm test:e2e:reservations
+corepack pnpm test:e2e:coach-dashboard
 corepack pnpm test:e2e:supabase
 corepack pnpm test:e2e:supabase:deps
 corepack pnpm test:e2e:supabase:evidence

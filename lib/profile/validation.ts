@@ -1,17 +1,28 @@
 import { z } from "zod"
 
+import { normalizeProfilePhone } from "./phone-contract"
 import { canonicalProfileRegionSchema } from "./region-contract"
 
 const phonePattern = /^01[016789]-[0-9]{3,4}-[0-9]{4}$/
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const avatarSegmentPattern = /^[A-Za-z0-9._-]+$/
+const createProfilePhoneSchema = z
+  .string()
+  .trim()
+  .transform((value, context) => {
+    const normalized = normalizeProfilePhone(value)
+    if (normalized !== null) return normalized
+
+    context.addIssue({ code: "custom", message: "Invalid mobile phone number." })
+    return z.NEVER
+  })
 
 const createProfileSchema = z.strictObject({
   defaultRegion: canonicalProfileRegionSchema,
   displayName: trimmedString(2, 30),
   locationAgreed: z.boolean(),
   marketingAgreed: z.boolean(),
-  phone: z.string().trim().regex(phonePattern),
+  phone: createProfilePhoneSchema,
   realName: trimmedString(2, 50),
 })
 

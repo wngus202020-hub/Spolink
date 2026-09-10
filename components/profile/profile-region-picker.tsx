@@ -2,6 +2,7 @@
 
 import { Check, MapPin, Search, X } from "lucide-react"
 import { type RefObject, useId, useState } from "react"
+import { TextInput } from "@/components/ui/form-controls"
 import { type LessonRegion, type LessonRegionDistrict, lessonRegions } from "@/lib/lesson-regions"
 import {
   searchRegionOptions,
@@ -37,7 +38,9 @@ type ProfileRegionPickerProps = Readonly<{
   disabled?: boolean
   inputRef?: RefObject<HTMLInputElement | null>
   invalid?: boolean
+  maxSuggestions?: number
   onChange: (value: string) => void
+  suggestionsOnly?: boolean
   value: string | null
 }>
 
@@ -66,6 +69,14 @@ export function getProfileRegionOptions(query: string): readonly ProfileRegionOp
   )
 
   return profileRegionOptions.filter((option) => matchingValues.has(option.value))
+}
+
+export function getProfileRegionSuggestions(
+  query: string,
+  maxSuggestions: number,
+): readonly ProfileRegionOption[] {
+  if (!query.trim()) return []
+  return getProfileRegionOptions(query).slice(0, maxSuggestions)
 }
 
 export function createProfileRegionPickerState(value: string | null): ProfileRegionPickerState {
@@ -99,14 +110,19 @@ export function ProfileRegionPicker({
   disabled = false,
   inputRef,
   invalid = false,
+  maxSuggestions = 2,
   onChange,
+  suggestionsOnly = false,
   value,
 }: ProfileRegionPickerProps) {
   const inputId = useId()
   const resultsId = useId()
   const [query, setQuery] = useState("")
   const pickerState = createProfileRegionPickerState(value)
-  const options = getProfileRegionOptions(query)
+  const awaitingQuery = suggestionsOnly && !query.trim()
+  const options = suggestionsOnly
+    ? getProfileRegionSuggestions(query, maxSuggestions)
+    : getProfileRegionOptions(query)
 
   const clearSearch = () => setQuery("")
 
@@ -135,11 +151,11 @@ export function ProfileRegionPicker({
           className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-secondary"
           strokeWidth={1.8}
         />
-        <input
+        <TextInput
           aria-describedby={[resultsId, describedBy].filter(Boolean).join(" ")}
           aria-invalid={invalid || undefined}
           autoComplete="off"
-          className="min-h-12 w-full rounded-[var(--radius-md)] border border-line bg-inset py-3 pl-11 pr-12 text-base text-primary placeholder:text-tertiary"
+          className="form-control--search"
           disabled={disabled}
           enterKeyHint="search"
           id={inputId}
@@ -167,10 +183,12 @@ export function ProfileRegionPicker({
       </div>
 
       <p aria-live="polite" className="m-0 text-sm text-secondary" id={resultsId} role="status">
-        검색 결과 {options.length}개
+        {awaitingQuery
+          ? `지역명을 입력하면 후보를 최대 ${maxSuggestions}개 보여드려요.`
+          : `검색 결과 ${options.length}개`}
       </p>
 
-      {options.length > 0 ? (
+      {awaitingQuery ? null : options.length > 0 ? (
         <fieldset
           aria-label="지역 선택지"
           className="m-0 grid grid-cols-1 gap-2 border-0 p-0 sm:grid-cols-2"
@@ -182,7 +200,7 @@ export function ProfileRegionPicker({
               <button
                 aria-pressed={isSelected}
                 className={[
-                  "inline-flex min-h-11 w-full items-center gap-2 rounded-[var(--radius-md)] border px-3 py-2 text-left text-sm font-bold whitespace-normal break-keep",
+                  "form-choice inline-flex w-full items-center gap-2 border text-left font-bold whitespace-normal break-keep",
                   isSelected
                     ? "border-accent bg-accent-soft text-primary"
                     : "border-line bg-canvas text-secondary hover:border-secondary hover:text-primary",

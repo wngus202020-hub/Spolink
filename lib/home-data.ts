@@ -3,6 +3,7 @@ import type { Lesson, TrustMetric } from "@/lib/home-data-types"
 
 export type {
   Lesson,
+  LessonLocation,
   LessonMedia,
   LessonMediaImage,
   LessonReview,
@@ -94,6 +95,7 @@ export const featuredLessons = [
     ],
     status: "active",
     media: { kind: "photo", src: "/images/lesson-tennis.webp" },
+    location: { latitude: 37.5012345, longitude: 127.0312345 },
   },
   {
     id: "pilates-songpa",
@@ -161,6 +163,7 @@ export const featuredLessons = [
     ],
     status: "active",
     media: { kind: "photo", src: "/images/lesson-pilates.webp" },
+    location: { latitude: 37.5133, longitude: 127.1028 },
   },
   {
     id: "running-mapo",
@@ -201,6 +204,7 @@ export const featuredLessons = [
     ],
     status: "pending_review",
     media: { kind: "photo", src: "/images/lesson-running.webp" },
+    location: null,
   },
 ] satisfies readonly Lesson[]
 

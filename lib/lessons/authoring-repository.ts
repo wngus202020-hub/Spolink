@@ -141,6 +141,8 @@ function lessonArgs(input: LessonDraftInput | LessonUpdateInput) {
     checked_capacity: input.capacity,
     checked_description: input.description,
     checked_duration_minutes: input.durationMinutes,
+    checked_latitude: input.latitude ?? null,
+    checked_longitude: input.longitude ?? null,
     checked_place_name: input.placeName ?? null,
     checked_preparation: input.preparation ?? null,
     checked_price_amount: input.priceAmount,

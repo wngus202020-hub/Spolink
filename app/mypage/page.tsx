@@ -6,15 +6,17 @@ import {
   MapPin,
   MessageSquare,
   ShieldCheck,
-  UserRound,
   UserRoundCog,
 } from "lucide-react"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { PublicHeader } from "@/components/layout/public-header"
+import { ProfileAvatar } from "@/components/profile/profile-avatar"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { getCoachNavigationEntry } from "@/lib/auth/coach-navigation"
 import { readPageAuthProfile } from "@/lib/auth/page-auth"
+import { PROFILE_AVATAR_BUCKET } from "@/lib/profile/avatar-contract"
+import { getSupabasePublicStorageUrl } from "@/lib/supabase/public-read-client"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -34,6 +36,12 @@ export default async function MyPage() {
     redirect("/onboarding/profile")
   }
   const coachNavigation = getCoachNavigationEntry(auth)
+  const avatarBaseUrl = auth.profile.avatar_path
+    ? getSupabasePublicStorageUrl(auth.profile.avatar_path, PROFILE_AVATAR_BUCKET)
+    : null
+  const avatarUrl = avatarBaseUrl
+    ? `${avatarBaseUrl}?v=${encodeURIComponent(auth.profile.updated_at)}`
+    : null
 
   return (
     <main className="min-h-[100dvh]">
@@ -53,9 +61,7 @@ export default async function MyPage() {
         <section className="grid gap-5 rounded-[var(--radius-xl)] border border-line bg-canvas p-5 [box-shadow:var(--shadow-panel)] md:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="inline-flex items-center gap-3">
-              <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-full bg-inset text-primary">
-                <UserRound aria-hidden="true" className="size-6" strokeWidth={1.8} />
-              </span>
+              <ProfileAvatar displayName={auth.profile.display_name} url={avatarUrl} />
               <div className="grid gap-1">
                 <span className="text-sm text-secondary">프로필</span>
                 <h2 className="m-0 text-[24px] font-bold leading-[1.3] text-primary">
@@ -69,7 +75,12 @@ export default async function MyPage() {
           <dl className="m-0 grid gap-3 border-t border-line pt-5 sm:grid-cols-2">
             <div className="grid gap-1">
               <dt className="text-sm font-bold text-primary">계정 상태</dt>
-              <dd className="m-0 text-sm text-secondary">이용 가능</dd>
+              <dd className="m-0 flex flex-wrap items-center gap-2 text-sm text-secondary">
+                이용 가능
+                <Link className="font-bold text-primary" href="/mypage/settings">
+                  계정 설정
+                </Link>
+              </dd>
             </div>
             <div className="grid gap-1">
               <dt className="inline-flex items-center gap-2 text-sm font-bold text-primary">
@@ -121,7 +132,7 @@ export default async function MyPage() {
               <div className="grid gap-1">
                 <h3 className="m-0 text-[22px] font-bold leading-[1.36] text-primary">내 정보</h3>
                 <p className="m-0 text-sm leading-[1.6] text-secondary">
-                  표시 이름과 기본 지역을 확인하고 관리해요.
+                  프로필 사진, 표시 이름과 기본 지역을 확인하고 관리해요.
                 </p>
               </div>
             </Link>

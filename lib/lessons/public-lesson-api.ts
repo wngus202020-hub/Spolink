@@ -71,6 +71,7 @@ type LessonListItem = Readonly<{
   }>
   durationMinutes: number
   id: string
+  location: Lesson["location"]
   priceAmount: number
   region: string
   sport: Readonly<{
@@ -164,6 +165,7 @@ function mapLessonListItem(lesson: Lesson): LessonListItem {
     },
     durationMinutes: lesson.durationMinutes,
     id: lesson.id,
+    location: lesson.location,
     priceAmount: lesson.priceAmount,
     region: lesson.region,
     sport: {

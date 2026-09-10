@@ -31,11 +31,31 @@ test("Given strict authoring schemas, when unsafe fields and malformed times arr
     action: "active",
     expectedUpdatedAt: "2026-08-14T14:00:00+09:00",
   })
+  const incompleteLocation = lessonDraftSchema.safeParse({
+    ...validDraft,
+    address: "서울특별시 강남구 테헤란로 123",
+    latitude: 37.5,
+  })
+  const invalidLocation = lessonDraftSchema.safeParse({
+    ...validDraft,
+    address: "서울특별시 강남구 테헤란로 123",
+    latitude: 91,
+    longitude: 127.03,
+  })
+  const validLocation = lessonDraftSchema.safeParse({
+    ...validDraft,
+    address: "서울특별시 강남구 테헤란로 123",
+    latitude: 37.5,
+    longitude: 127.03,
+  })
 
   // Then
   assert.equal(clientOwnedStatus.success, false)
   assert.equal(reversedTime.success, false)
   assert.equal(invalidAction.success, false)
+  assert.equal(incompleteLocation.success, false)
+  assert.equal(invalidLocation.success, false)
+  assert.equal(validLocation.success, true)
 })
 
 test("Given the forward migration, when its lifecycle boundary is inspected, then locks and grants are explicit", async () => {

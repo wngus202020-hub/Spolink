@@ -34,6 +34,11 @@ export type LessonMediaImage = Readonly<{
   url: string
 }>
 
+export type LessonLocation = Readonly<{
+  latitude: number
+  longitude: number
+}>
+
 export type Lesson = Readonly<{
   id: string
   title: string
@@ -62,6 +67,7 @@ export type Lesson = Readonly<{
   schedules: readonly LessonSchedule[]
   status: LessonStatus
   media: LessonMedia
+  location: LessonLocation | null
 }>
 
 export type TrustMetric = Readonly<{

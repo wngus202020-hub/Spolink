@@ -2,8 +2,10 @@
 
 ## OVERVIEW
 
-`supabase/` is the local PostgreSQL authority for schema, grants, RLS, and transactional RPCs.
-Hosted configuration and provider deployment are not present.
+`supabase/` is the PostgreSQL authority for schema, grants, RLS, and transactional RPCs. Local
+lifecycle remains the full verification surface. The separate hosted staging project is at the
+34-migration baseline; local migrations 35-39 are not yet deployed there. Hosted Auth/provider
+configuration is managed out of tree and production is not deployed.
 
 ## STRUCTURE
 
@@ -30,6 +32,13 @@ supabase/
 - Refund policy is 70% at least 24 hours before, 50% from 3 to under 24 hours, and 0% under 3 hours;
   integer arithmetic discards fractional currency.
 - Internal `refunds.status = requested` is not proof of an actual Toss provider refund.
+- Migration 35 exposes review history only to its review owner (and authorized admins), never other users.
+- Migration 36 keeps Realtime notifications owner-scoped; Web Push subscriptions and delivery outbox rows
+  remain owner-protected, while queue lease/complete/retry operations are service-role only.
+- Migration 37 treats geocoded latitude and longitude as a paired location: both valid coordinates or both null.
+- Migration 38 makes profile-avatar reads public, but insert/update/delete paths owner-mutated and path-bound.
+- Migration 39 `withdraw_current_account()` accepts no owner input, soft-deletes only `auth.uid()`, clears
+  personal settings, and preserves financial/history rows required by policy.
 - RLS must protect ownership and system-managed fields even when API validation exists.
 
 ## LOCAL CONFIG
@@ -39,6 +48,8 @@ supabase/
 - Do not commit signing keys, service-role keys, database credentials, or provider secrets.
 - Auth redirect URLs used by E2E are exact loopback URLs and are restored by the runner.
 - Use guarded package scripts, not raw destructive Supabase CLI commands.
+- Hosted staging link metadata is local-only and may be removed after provider work so it cannot
+  conflict with guarded local lifecycle ownership. Never run linked reset/down/include-seed commands.
 
 ## VERIFY
 

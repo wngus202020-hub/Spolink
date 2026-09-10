@@ -1,21 +1,27 @@
 # SUPABASE LIBRARY GUIDE
 
-## CLIENT CHOICES
+## CLIENT BOUNDARIES
 
 - `client.ts`: `createSupabaseBrowserClient()` for browser-safe anonymous-key access only.
-- `public-read-client.ts`: `createSupabasePublicReadClient()` for unauthenticated public lesson reads
-  and public lesson-image URLs; honor unconfigured mode instead of synthesizing a configured client.
-- `server.ts`: `createSupabaseServerClient(responseHeaders)` for request-bound server reads/writes.
+- `public-read-client.ts`: `createSupabasePublicReadClient()` supports unconfigured public lesson reads;
+  `getSupabasePublicStorageUrl()` is for public lesson-image URLs.
+- `server.ts`: `createSupabaseServerClient(responseHeaders)` is the request-bound client. It and the auth
+  route/page helpers are the central cookie boundary; do not create parallel cookie implementations.
 - `proxy.ts`: `refreshSupabaseSessionInProxy()` is the proxy-only session refresh boundary.
 - `../auth/server-profile.ts` and auth route clients use cookie-aware server clients; do not create
   parallel cookie implementations.
 
-## ENVIRONMENT AND STATUS
+## ENVIRONMENT
 
-- Read public credentials through `readSupabasePublicEnv()`; never expose service-role data.
-- Use `getSupabaseConfigStatus()` when a safe unconfigured response is required.
-- Service, Toss, and edge readers have matching status functions; report missing/invalid keys, not values.
-- Keep environment schemas and consumers aligned with local lifecycle status readers in `scripts/`.
+`env.ts` parses Supabase public/service configuration, Toss secret configuration, trusted Edge configuration,
+and Web Push VAPID configuration with matching safe status readers. Report missing or invalid keys without
+logging values.
+
+- Browser code may receive only the public Supabase URL/anon key and
+  `NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY`.
+- Service-role, Toss, Edge, Web Push private key, and Web Push subject values stay server-only.
+- Use `readSupabasePublicEnv()` and `getSupabaseConfigStatus()` for public client setup; preserve
+  unconfigured mode rather than synthesizing a configured client.
 
 ## COOKIE PROPAGATION
 
@@ -24,11 +30,18 @@
 - Proxy refresh updates request cookies, response cookies, forwarded headers, and private no-store caching.
 - Route handlers return the same headers after workflow completion, including error responses.
 
+## STORAGE VISIBILITY
+
+- `lesson-images` and `profile-avatars` are public-read and are distinct from private `coach-certificates`.
+- The certificate applicant owner reads directly under the current Storage `SELECT` policy. An active admin
+  gets an authorized 300-second signed read; never claim applicants receive signed reads.
+- Public bucket reads do not authorize mutation: retain the owner/intent policies and domain workflow checks.
+
 ## SERVICE ROLE
 
 - `createSupabaseServiceClient()` remains server-only, with auth persistence disabled.
 - Restrict it to trusted provider verification/reconciliation, guarded refund or settlement RPC work,
-  authorized private admin certificate reads, and narrowly scoped server enrichment after a
+  authorized active-admin certificate reads, and narrowly scoped server enrichment after a
   session-owned record or safe public identifiers establish the permitted relation set.
 - Do not import it into browser code or use it to bypass owner/admin authorization checks.
 - Establish caller claims and domain authorization before a service-role call; keep provider secrets out
@@ -36,11 +49,10 @@
 
 ## DATABASE TYPES
 
-- `database.types.ts` is the hand-maintained projection of committed migrations, tables, enums, views,
-  and RPC signatures.
-- Update it in the same change as a migration/RPC contract; preserve readonly row/insert/update shapes.
-- Compare names, nullability, arguments, and returns against `supabase/migrations/`; do not invent
-  application-only schema variants.
+- `database.types.ts` is the hand-maintained projection of committed migrations: tables, enums, views, and RPC
+  signatures. It is not a generated artifact to blindly regenerate.
+- Update it with the matching migration/RPC contract. Compare names, nullability, arguments, returns, and
+  readonly row/insert/update shapes against `../../supabase/migrations/`; do not invent application schema.
 
 ## TESTS
 

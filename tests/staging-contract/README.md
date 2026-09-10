@@ -2,7 +2,11 @@
 
 This directory contains local-only contract checks for the hosted Supabase and Vercel staging plan.
 
-Gate 0 evidence is a readiness checklist, not provider proof. Historical notes in `.omo/notepads/hosted-supabase-vercel-staging/` are planning context only; they do not prove current GitHub, Supabase, Vercel, SMTP, cleanup, origin, or separation state.
+Gate 0 evidence is a readiness checklist, not provider proof. A separate Supabase/Vercel staging
+deployment was created outside this local contract runner, but the checklist remains `BLOCKED` until
+all seven status-only attestations are current. Custom SMTP confirmation/recovery is provider-verified;
+GitHub visibility attestation and CI/CD are still missing. Historical notes in
+`.omo/notepads/hosted-supabase-vercel-staging/` remain planning context only.
 
 ## Status Input
 
@@ -24,7 +28,23 @@ The input must contain exactly these keys:
 - `stableHttpsOrigin`
 - `resourceSeparation`
 
-Do not add resource identifiers, URLs, project refs, owner names, email addresses, UUIDs, credentials, provider output, comments, or free-form notes. Secrets belong only in provider secret stores.
+Do not add resource identifiers, URLs, project refs, owner names, email addresses, UUIDs,
+credentials, provider output, comments, or free-form notes. Secrets belong only in provider secret
+stores.
+
+## Hosted SMTP Verification
+
+The Mailtrap Sandbox token stays in `SPOLINK_STAGING_MAILTRAP_API_TOKEN` or the macOS Keychain item
+`spolink-mailtrap-staging/api-token`. Supabase cleanup authority comes from the approved CI secret
+scope or the logged-in local Supabase CLI. Run the real hosted browser flow with:
+
+```bash
+SPOLINK_STAGING_BASE_URL=https://spolink-staging.vercel.app \
+  corepack pnpm staging:verify:smtp
+```
+
+The runner creates one random test account, verifies confirmation and one-time recovery, deletes
+only its exact Mailtrap messages and Auth user, and writes redacted status-only evidence.
 
 ## Commands
 

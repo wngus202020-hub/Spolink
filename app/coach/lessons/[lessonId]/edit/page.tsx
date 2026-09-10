@@ -77,6 +77,8 @@ export default async function EditCoachLessonPage({ params }: EditCoachLessonPag
             description: lesson.description,
             durationMinutes: lesson.duration_minutes,
             id: lesson.id,
+            latitude: lesson.latitude,
+            longitude: lesson.longitude,
             placeName: lesson.place_name,
             preparation: lesson.preparation,
             priceAmount: lesson.price_amount,

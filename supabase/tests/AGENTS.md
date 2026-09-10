@@ -7,6 +7,8 @@
 - Root suites: `supabase/tests/*.test.sql`.
 - Split-suite example: `supabase/tests/lesson_images.test.sql` plus `supabase/tests/lesson_images/`.
 - Auth and grant example: `supabase/tests/auth_recovery_grants.test.sql` plus `auth_recovery_grants/`.
+- Notification Push contract: `supabase/tests/notification_push.test.sql`.
+- Account withdrawal contract: `supabase/tests/account_withdrawal.test.sql`.
 - Reservation fixture and behavior files: `supabase/tests/reservation_cancellation/`.
 - Schema/grant assertions live beside behavior assertions; `structure_and_permissions.psql` is the naming pattern.
 

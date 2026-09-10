@@ -3,6 +3,12 @@
 ## OVERVIEW
 This directory implements guarded local Supabase lifecycle, Docker identity, locks, subprocesses, status, receipts, and cleanup.
 
+## MODULE MAP
+- `lifecycle.mjs`: guarded start, reset, test, status, stop, and cleanup orchestration.
+- `docker.mjs`, `receipt.mjs`, `lock.mjs`: daemon identity and mutation ownership proof.
+- `next-dev.mjs`, `app-env.mjs`, `spawn.mjs`: fixed-port Next child and sealed subprocess boundary.
+- `status-config.mjs`: parses only the expected loopback local Supabase status.
+
 ## OWNERSHIP
 - Project ID is `spolink`; endpoints are loopback-only.
 - Start/reset/stop mutate only resources with a current-run ownership receipt.

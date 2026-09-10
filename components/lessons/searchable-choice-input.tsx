@@ -1,5 +1,6 @@
 import { Search, X } from "lucide-react"
 import { useId } from "react"
+import { TextInput } from "@/components/ui/form-controls"
 
 type SearchableChoiceInputProps = Readonly<{
   label: string
@@ -16,21 +17,23 @@ export function SearchableChoiceInput({
   resultCount,
   value,
 }: SearchableChoiceInputProps) {
+  const inputId = useId()
   const statusId = useId()
 
   return (
-    <label className="relative block">
+    <label className="relative block" htmlFor={inputId}>
       <span className="sr-only">{label}</span>
       <Search
         aria-hidden="true"
         className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-secondary"
         strokeWidth={1.8}
       />
-      <input
+      <TextInput
         aria-describedby={statusId}
         autoComplete="off"
-        className="min-h-12 w-full rounded-[var(--radius-md)] border border-line bg-inset py-3 pl-11 pr-12 text-base text-primary placeholder:text-tertiary"
+        className="form-control--search"
         enterKeyHint="search"
+        id={inputId}
         inputMode="search"
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {

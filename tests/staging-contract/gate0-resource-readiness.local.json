@@ -2,7 +2,7 @@
   "githubPrivateRepository": "BLOCKED",
   "supabaseStagingProject": "BLOCKED",
   "vercelStagingTopology": "BLOCKED",
-  "smtpMailbox": "BLOCKED",
+  "smtpMailbox": "VERIFIED",
   "cleanupAuthority": "BLOCKED",
   "stableHttpsOrigin": "BLOCKED",
   "resourceSeparation": "BLOCKED"

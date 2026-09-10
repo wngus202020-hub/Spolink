@@ -9,6 +9,7 @@ import {
 } from "@/components/lessons/lesson-search-option-panels"
 import { LessonSearchSheet } from "@/components/lessons/lesson-search-sheet"
 import { LessonSearchSummary } from "@/components/lessons/lesson-search-summary"
+import { TextInput } from "@/components/ui/form-controls"
 import type { LessonRegion } from "@/lib/lesson-regions"
 import { lessonRegions } from "@/lib/lesson-regions"
 import type { FilterState } from "@/lib/lesson-search"
@@ -104,11 +105,11 @@ export function LessonSearchPicker({
   const dateContent = (
     <>
       {activePanel === "date" ? (
-        <label className="grid gap-2 sm:max-w-xs">
+        <label className="grid gap-2 sm:max-w-xs" htmlFor={`${panelId}-date-input`}>
           <span className="text-sm font-bold text-primary">레슨 날짜</span>
-          <input
+          <TextInput
             aria-label="레슨 날짜"
-            className="min-h-12 rounded-[var(--radius-md)] border border-line bg-inset px-4 text-base text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+            id={`${panelId}-date-input`}
             onChange={(event) => updateFilters({ ...editingFilters, date: event.target.value })}
             type="date"
             value={isNativeDateValue(editingFilters.date) ? editingFilters.date : ""}

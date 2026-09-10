@@ -157,6 +157,14 @@ test("signup explains missing Supabase configuration instead of blaming user inp
   assert.match(signup, /회원가입 서버 연결이 준비되지 않았어요\. 잠시 후 다시 시도해요\./u)
 })
 
+test("login recovers from missing Supabase configuration without leaving submit locked", async () => {
+  const login = await readText("components/auth/login-form.tsx")
+
+  assert.match(login, /SupabaseConfigError/u)
+  assert.match(login, /로그인 서버 연결이 준비되지 않았어요\. 잠시 후 다시 시도해요\./u)
+  assert.match(login, /catch \(error\)[\s\S]*failLogin/u)
+})
+
 test("Todo 5 auth scope has no TypeScript escape hatches or empty catches", async () => {
   const source = await readJoined([...authUiFiles, ...authSpecFiles, ...authHelperFiles])
   const banned = [

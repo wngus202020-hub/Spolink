@@ -9,6 +9,9 @@ Profile APIs own learner profile creation and owner-scoped reads/edits for `/api
 - `workflow.ts`: authenticate, classify account/profile state, apply profile policy, then map the response.
 - `supabase-repository.ts`: persistence only; map camelCase workflow inputs to `profiles` columns.
 - `default-route-dependencies.ts`: production wiring for cookie-aware server Supabase and workflow dependencies.
+- `phone-contract.ts`: normalizes a trimmed canonical or compact Korean mobile number to hyphenated form.
+- `avatar-contract.ts`: validates avatar files and derives the one canonical `profiles/<owner-id>/avatar` object.
+- `avatar-client.ts`: uploads/removes that object and confirms the owner-checked `avatarPath` PATCH response.
 
 ## IDENTITY
 
@@ -24,7 +27,9 @@ Profile APIs own learner profile creation and owner-scoped reads/edits for `/api
 - PATCH is partial. `buildProfileUpdate` writes only supplied fields; omitted fields must remain byte-exact.
 - `edit-contract.ts` is the browser-safe edit boundary. `buildProfileEditPatch` returns only changed fields, or `null` for no changes.
 - Keep `PROFILE_EDIT_PATCH_KEYS` authoritative for UI-editable fields: display name, real name, phone, region, and two consents.
-- Do not add avatar, owner, role, status, deletion, or timestamp fields to that browser allowlist.
+- Do not add avatar, owner, role, status, deletion, or timestamp fields to that six-field browser allowlist.
+- `avatar-contract.ts` and `avatar-client.ts` own the separate avatar upload/remove flow. They use one
+  canonical owner object and then reuse the existing owner-checked `avatarPath` PATCH field.
 
 ## REGION
 

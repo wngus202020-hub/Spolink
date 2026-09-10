@@ -9,7 +9,7 @@ source-manifest verification. These scripts may manage processes and Docker reso
 
 | Task | Location |
 |------|----------|
-| Local auth launcher | `dev-local.mjs` |
+| Guarded local Supabase + Next launcher | `dev-local.mjs` |
 | CLI dispatch | `supabase-local.mjs` |
 | Lifecycle orchestration | `supabase-local/lifecycle.mjs` |
 | Docker identity/resources | `supabase-local/docker.mjs` |
@@ -18,6 +18,8 @@ source-manifest verification. These scripts may manage processes and Docker reso
 | Sealed subprocess env | `supabase-local/env.mjs`, `spawn.mjs` |
 | Local status validation | `supabase-local/status-config.mjs` |
 | Region catalog | `generate-lesson-regions.mjs` |
+| Lesson-image cleanup utility | `lesson-images-cleanup.mjs` |
+| Region source binding | `profile-region-source-binding.mjs` |
 | Direction allowlist | `opencode-direction-allowlist-manifest.mjs`, verifier |
 
 ## SAFETY RULES
